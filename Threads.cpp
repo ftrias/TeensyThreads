@@ -4,6 +4,7 @@
   Copyright 2017 by Fernando Trias. All rights reserved.
 */
 #include "Threads.h"
+#include <Arduino.h>
 
 Threads threads;
 
@@ -22,20 +23,22 @@ extern "C" {
 
 Threads::Threads() : thread_active(FIRST_RUN), current_thread(0), thread_count(0), thread_error(0) {
   // initialize context_switch() globals from thread 0, which is MSP and always running
-  currentThread = thread;
+  currentThread = thread;        // thread 0 is active
   currentSave = &thread[0].save;
   currentMSP = 1;
   currentSP = 0;
+  thread[0].flags = RUNNING;
 }
 
 /*
  * start() - Begin threading
  */
-int Threads::start() {
-  __asm volatile("CPSID I");
+int Threads::start(int prev_state) {
+  __asm volatile("CPSID IF");
   int old_state = thread_active;
-  thread_active = STARTED;
-  __asm volatile("CPSIE I");  
+  if (prev_state == -1) prev_state = STARTED;
+  thread_active = prev_state;
+  __asm volatile("CPSIE IF");  
   return old_state;
 }
 
@@ -46,10 +49,10 @@ int Threads::start() {
  * because it could destabalize the system if thread 0 is stopped.
  */
 int Threads::stop() {
-  __asm volatile("CPSID I");
+  __asm volatile("CPSID IF");
   int old_state = thread_active;
   thread_active = STOPPED;
-  __asm volatile("CPSIE I");  
+  __asm volatile("CPSIE IF");  
   return old_state; 
 }
 
@@ -61,7 +64,7 @@ int Threads::stop() {
 void Threads::getNextThread() {
   // First, save the currentSP set by context_switch
   thread[current_thread].sp = currentSP;
-  // Find the next open thread
+  // Find the next running thread
   do {
     current_thread++;
     if (current_thread >= MAX_THREADS) {
@@ -69,7 +72,7 @@ void Threads::getNextThread() {
       break;
     }
   }
-  while (thread[current_thread].flags == 0);
+  while (thread[current_thread].flags != RUNNING);
   currentThread = &thread[current_thread];
   currentSave = &thread[current_thread].save;
   currentMSP = (current_thread==0?1:0);
@@ -103,8 +106,17 @@ void __attribute((naked)) systick_isr(void)
  * just stalls until such time.
  */
 void Threads::del_process(void){
-  threads.thread[threads.current_thread].flags = 0; //clear the flags so thread can stop and be reused
+  int old_state = threads.stop();
+  ThreadInfo *me = &threads.thread[threads.current_thread];
+  // Would love to delete stack here but the thread doesn't
+  // end now. It continues until the next tick.
+  // if (me->my_stack) {
+  //   delete[] me->stack;
+  //   me->stack = 0;
+  // }
   threads.thread_count--;
+  me->flags = ENDED; //clear the flags so thread can stop and be reused
+  threads.start(old_state);
   while(1); // just in case, keep working until context change when execution will not return to this thread
 }
 
@@ -147,20 +159,23 @@ void *Threads::loadstack(ThreadFunction p, void * arg, void *stackaddr, int stac
 int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack)
 {
   int old_state = stop();
-  thread[0].flags = 1;
   for (int i=1; i < MAX_THREADS; i++) {
-    if (thread[i].flags == 0) { // free thread
-      if (thread[i].stack) {
-        delete thread[i].stack;
+    if (thread[i].flags == ENDED || thread[i].flags == EMPTY) { // free thread
+      if (thread[i].stack && thread[i].my_stack) {
+        delete[] thread[i].stack;
       }
       if (stack==0) {
         stack = new uint8_t[stack_size];
+        thread[i].my_stack = 1;
+      }
+      else {
+        thread[i].my_stack = 0;
       }
       thread[i].stack = (uint8_t*)stack;
       thread[i].stack_size = stack_size;
       void *psp = loadstack(p, arg, thread[i].stack, thread[i].stack_size);
       thread[i].sp = psp;
-      thread[i].flags = 1;
+      thread[i].flags = RUNNING;
       thread_active = old_state;
       thread_count++;
       if (old_state == STARTED || old_state == FIRST_RUN) start();
@@ -169,6 +184,44 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
   }
   if (old_state == STARTED) start();
   return -1;
+}
+
+int Threads::getState(int id)
+{
+  return thread[id].flags;
+}
+int Threads::setState(int id, int state)
+{
+  thread[id].flags = state;
+  return state;
+}
+int Threads::wait(int id, unsigned int timeout_ms)
+{
+  unsigned int start = millis();
+  // need to store state in temp volatile memory for optimizer.
+  // "while (thread[id].flags != RUNNING)" will be optimized away
+  volatile int state; 
+  while (1) {
+    if (timeout_ms != 0 && millis() - start > timeout_ms) return -1;
+    state = thread[id].flags;
+    if (state != RUNNING) break;
+  }
+  return id;
+}
+int Threads::kill(int id)
+{
+  thread[id].flags = ENDED;
+  return id;
+}
+int Threads::suspend(int id)
+{
+  thread[id].flags = SUSPENDED;
+  return id;
+}
+int Threads::restart(int id)
+{
+  thread[id].flags = RUNNING;
+  return id;
 }
 
 /*

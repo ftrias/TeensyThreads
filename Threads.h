@@ -14,13 +14,32 @@
  *
  *   volatile int count = 0;
  *
- *   void thread_func(void *data){
+ *   void thread_func(int data){
  *     while(1) count++;
  *   }
  *
  *   void setup() {
  *     threads.addThread(thread_func, 0);
- *     threads.start();
+ *   }
+ *
+ *   void loop() {
+ *     Serial.print(count);
+ *   }
+ *
+ * Alternatively, you can use the std::threads class defined
+ * by C++11
+ *
+ *   #include <Threads.h>
+ *
+ *   volatile int count = 0;
+ *
+ *   void thread_func(){
+ *     while(1) count++;
+ *   }
+ *
+ *   void setup() {
+ *     std::thead th1(thread_func);
+ *     th1.detach();
  *   }
  *
  *   void loop() {
@@ -94,6 +113,7 @@ class ThreadInfo {
   public:
     int stack_size;
     uint8_t *stack=0;
+    int my_stack = 0;
     software_stack_t save;
     int flags = 0;
     void *sp;
@@ -112,11 +132,18 @@ public:
   // The maximum number of threads is hard-coded to simplify
   // the implementation. See notes of ThreadInfo.
   static const int MAX_THREADS = 8;
-  static const int DEFAULT_STACK_SIZE = 4096;
+  static const int DEFAULT_STACK_SIZE = 1024;
 
+  // State of threading system
   static const int STARTED = 1;
   static const int STOPPED = 2;
   static const int FIRST_RUN = 3;
+
+  // State of individual threads
+  static const int EMPTY = 0;
+  static const int RUNNING = 1;
+  static const int ENDED = 2;
+  static const int SUSPENDED = 3;
 
 protected:
   int thread_active;
@@ -140,17 +167,34 @@ public:
   // Create a new thread for function "p", passing argument "arg". If stack is 0,
   // stack allocated on heap. Function "p" has form "void p(void *)".
   int addThread(ThreadFunction p, void * arg=0, int stack_size=DEFAULT_STACK_SIZE, void *stack=0);
-  // For void f(int)
+  // For: void f(int)
   int addThread(ThreadFunctionInt p, int arg=0, int stack_size=DEFAULT_STACK_SIZE, void *stack=0) {
     return addThread((ThreadFunction)p, (void*)arg, stack_size, stack);
   }
-  // For void f()
+  // For: void f()
   int addThread(ThreadFunctionNone p, int arg=0, int stack_size=DEFAULT_STACK_SIZE, void *stack=0) {
     return addThread((ThreadFunction)p, (void*)arg, stack_size, stack);
   }
 
-  int start();        // Start threading
-  int stop();        // Stop threading (see warnings in code)
+  // Get the state; see class constants. Can be EMPTY, RUNNING, ENDED, SUSPENDED.
+  int getState(int id);
+  // Explicityly set a state. See getState(). Call with care.
+  int setState(int id, int state);
+  // Wait until thread returns up to timeout_ms milliseconds. If ms is 0, wait
+  // indefinitely.
+  int wait(int id, unsigned int timeout_ms = 0);
+  // Permanently stop a running thread. Thread will end on the next thread slice tick.
+  int kill(int id);
+  // Suspend a thread (on the next slice tick). Can be restarted with restart().
+  int suspend(int id);
+  // Restart a suspended thread.
+  int restart(int id);
+
+  // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
+  // can pass the previous state to restore
+  int start(int old_state = -1);
+  // Stop threading system; returns previous state: STARTED, STOPPED, FIRST_RUN        
+  int stop();
 
   // Allow these static functions and classes to access our members
   friend void context_switch(void); 
@@ -183,12 +227,31 @@ extern Threads threads;
  */
 namespace std {
   class thread {
+  private:
+    int id;          // internal thread id
+    int destroy;     // flag to kill thread on instance destruction
   public:
+    // By casting all (args...) to (void*), if there are more than one args, the compiler
+    // will fail to find a matching function
     template <class F, class ...Args> explicit thread(F&& f, Args&&... args) {
-      // by casting all (args...) to (void*), if there are more than one args, the compiler
-      // will fail to find a matching function
-      threads.addThread((ThreadFunction)f, (void*)args...);
+      id = threads.addThread((ThreadFunction)f, (void*)args...);
+      destroy = 1;
     }
+    // If thread has not been detached when destructor called, then thread must end
+    ~thread() {
+      if (destroy) threads.kill(id);
+    }
+    // Threads are joinable until detached per definition, but in this implementation
+    // that's not so. We emulate expected behavior anyway.
+    bool joinable() { return destroy==1; }
+    // Once detach() is called, thread runs until it terminates; otherwise it terminates
+    // when destructor called
+    void detach() { destroy = 0; }
+    // In theory, the thread merges with the running thread; if we just wait until
+    // termination, it's basically the same thing.
+    void join() { threads.wait(id); }
+    // Get the unique thread id
+    int get_id() { return id; }
   };
 }
 
