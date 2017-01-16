@@ -1,7 +1,7 @@
 Teensy Threading Library
 ===================================================
 
-Copyright 2017 by Fernando Trias
+Copyright 2017 by Fernando Trias. All rights reserved.
 Revision 1, January 2017
 
 Overview
@@ -10,7 +10,7 @@ Overview
 Teensy Threading Library uses the built-in threading support of the Cortex-M4
 to implement basic threading for the Teensy 3.x platform.
 
-Simple Example
+Simple example
 ------------------------------
 
 ```C++
@@ -38,19 +38,21 @@ A global variable `threads` of `class Threads` is used to control the threading
 action. The library is hard-coded to support 8 threads, but this may be changed
 in the source code of Threads.cpp.
 
-Threads are created by threads.addThread() with parameters:
+Threads are created by `threads.addThread()` with parameters:
 
+```
 addThread(func, arg, stack_size, stack)
 
   func : function to call to perform thread work. This has the form of
          "void f(void *arg)" or "void f(int arg)" or "void f()"
   arg  : the "arg" passed to "func" when it starts.
-  stack_size: (optional) the size of the thread stack, by default 4096
-  stack : (optional) pointer to a buffer to use as stack
+  stack_size: (optional) the size of the thread stack [1]
+  stack : (optional) pointer to a buffer to use as stack [2]
   Returns an ID number or -1 for failure
 
-  1. If stack_size is 0 or missing, then 4096 is used
-  2. If stack is 0 or missing, then the buffer is allocated from the heap
+  [1] If stack_size is 0 or missing, then 4096 is used
+  [2] If stack is 0 or missing, then the buffer is allocated from the heap
+```
 
 All threads start immediately and run until the function terminates with
 a return.
@@ -66,7 +68,9 @@ in C++11. See http://www.cplusplus.com/reference/thread/thread/
 
 Example:
 
+```C++
   std::thread first(thread_func);
+```
 
 Notes on implementation
 -----------------------------
@@ -113,9 +117,10 @@ The code comments give some explanation of the process:
 Todo
 -----------------------------
 
-1. Implement yielding functionality so threads can give up their slices
+1. Implement yielding functionality so threads can give up their time slices
 2. Implement a priority or time slice length for each thread
-3. Check for stack overflow during context_change() to aid in debugging
-4. Optimize assembly
-5. Use a standard thread class interface, like the new C++11 std::thread
+3. Time slices smaller than 1 millisecond
+4. Check for stack overflow during context_change() to aid in debugging
+5. Optimize assembly
+6. Use a standard thread class interface, like the new C++11 std::thread
    or POSIX threads. See http://www.cplusplus.com/reference/thread/thread/
