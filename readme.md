@@ -53,7 +53,7 @@ action. The library is hard-coded to support 8 threads, but this may be changed
 in the source code of Threads.cpp.
 
 Each thread has it's own stack which can be allocated by the user or automatically
-on the stack (see addThread() notes below).
+on the heap (see addThread() notes below).
 
 Threads are created by `threads.addThread()` with parameters:
 
@@ -77,7 +77,10 @@ a return.
 If a thread ends because the function returns, then the thread will be reused
 by a new function.
 
-The follwing functions of `class Threads` can also be used. Items in all caps are
+If a stack has been allocated, it will be freed after a thread terminates,
+but only when a new thread is added.
+
+The follwing functions of `class Threads` control threads. Items in all caps are
 const memebers of `Threads` and are accessed as in `Threads::EMPTY`.
 
 ```C++
@@ -114,7 +117,7 @@ away. Here is an example:
 int state = 0;
 void thread1() { state = processData(); }
 void run() {
-  while (state<100);
+  while (state<100);     // this line changed to 'if'
   // do something
 }
 ```
@@ -127,8 +130,8 @@ optimizer will convert the `while (state<100)` into an `if` statement. Adding
 Alternative std::thread interface
 -----------------------------
 
-The header also supports the construction of minimal std::thread as indicated 
-in C++11. std::thread always allocates it's own stack of the default size.
+The header also supports the construction of minimal `std::thread` as indicated 
+in C++11. `std::thread` always allocates it's own stack of the default size.
 See http://www.cplusplus.com/reference/thread/thread/
 
 Example:
@@ -151,19 +154,21 @@ int get_id();
 Notes on implementation
 -----------------------------
 
-Threads take turns on the CPU and are switched by the `context_switch()` function.
+Threads take turns on the CPU and are switched by the `context_switch()` function,
+written in assembly.
 This function is called by the SysTick ISR. The library overrides the default
 `systick_isr()` to accomplish switching. On the Teensy by default, each tick is 
 1 millisecond long. This means that each thread will run for 1 millisecond at
 a time.
 
-A lot of the Teensy core software is thread-safe, but not all. When in doubt, 
+Much of the Teensy core software is thread-safe, but not all. When in doubt, 
 stop and restart threading in critical areas. In general, functions that share
 global variables or state should not be called on different threads at the same
 time. For example, don't use Serial in two different threads simultaneously; it's
 ok to make calls on different threads at different times.
 
-The code comments give some explanation of the process:
+The code comments on the source code give some technical explanation of the 
+context switch process:
 
 ```C
 /*
@@ -178,10 +183,10 @@ The code comments give some explanation of the process:
  * 7. Switch MSP/PSP on return
  *
  * Notes:
- * - Cortex-M has two stack pointers, MSP and PSP, which we alternate. See the 
+ * - Cortex-M4 has two stack pointers, MSP and PSP, which we alternate. See the 
  *   reference manual under the Exception Model section.
  * - I tried coding this in asm embedded in Threads.cpp but the compiler
- *   optimizations kept chaning my code and removing lines so I have to use
+ *   optimizations kept changing my code and removing lines so I have to use
  *   a separate assembly file. But if you try it, make sure to declare the
  *   function "naked" so the stack pointer SP is not modified when called.
  *   This means you can't use local variables, which are stored in stack. 
@@ -209,7 +214,7 @@ Todo
 3. Implement a priority or time slice length for each thread
 4. Time slices smaller than 1 millisecond
 5. Check for stack overflow during context_change() to aid in debugging; or
-   have a stack that grows automatically if it get close filling.
+   have a stack that grows automatically if it gets close filling.
 6. Optimize assembly
 7. Fully implement the new C++11 std::thread or POSIX threads. 
    See http://www.cplusplus.com/reference/thread/thread/
