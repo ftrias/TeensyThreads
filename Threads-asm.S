@@ -1,4 +1,7 @@
- /*
+/*
+ * Threads-asm.S - Library for threading on the Teensy.
+ * Copyright 2017 by Fernando Trias. All rights reserved.
+ *
  * context_switch() changes the context to a new thread. It follows this strategy:
  *
  * 1. Abort if called from within another interrupt

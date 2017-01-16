@@ -2,6 +2,7 @@ Teensy Threading Library
 ===================================================
 
 Copyright 2017 by Fernando Trias. All rights reserved.
+
 Revision 1, January 2017
 
 Overview
@@ -105,7 +106,7 @@ The code comments give some explanation of the process:
  *   Also turn optimizations off using optimize("O0").
  * - Function is called from systick_isr (also naked) via a branch. Again, this is
  *   to preserve the stack and LR.
- * - Since Systick can be called from within another interrupt, for simplicity, we check
+ * - Since Systick can be called from within another interrupt, we check
  *   for this and abort.
  * - Teensy uses MSP for it's main thread; we preserve that. Alternatively, we
  *   could have used PSP for all threads, including main, and reserve MSP for
@@ -118,9 +119,10 @@ Todo
 -----------------------------
 
 1. Implement yielding functionality so threads can give up their time slices
-2. Implement a priority or time slice length for each thread
-3. Time slices smaller than 1 millisecond
-4. Check for stack overflow during context_change() to aid in debugging
-5. Optimize assembly
-6. Use a standard thread class interface, like the new C++11 std::thread
+2. Implement a delay() to give up time slices to other threads
+3. Implement a priority or time slice length for each thread
+4. Time slices smaller than 1 millisecond
+5. Check for stack overflow during context_change() to aid in debugging
+6. Optimize assembly
+7. Use a standard thread class interface, like the new C++11 std::thread
    or POSIX threads. See http://www.cplusplus.com/reference/thread/thread/
