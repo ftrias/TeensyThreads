@@ -2,7 +2,7 @@ Teensy Threading Library
 ===================================================
 
 Teensy Threading Library uses the built-in threading support of the Cortex-M4
-to implement basic threading for the Teensy 3.x platform from 
+to implement basic preemptive threading for the Teensy 3.x platform from 
 PJRC (https://www.pjrc.com/teensy/index.html). It supports a native 
 interface and std::thread interface.
 
@@ -216,6 +216,13 @@ Todo
 
 Other
 -----------------------------
+
+This project came about because I was coding a Teensy application with
+multiple things happening at the same time, whistfully reminiscing about
+multithreading available in other OSs. I searched for threading
+tools, but found nothing. This combined with boredom and abundant
+free time resulting in complete overkill for the solution and thus this
+implementation of preemptive threads.
 
 Copyright 2017 by Fernando Trias. All rights reserved.
 Revision 1, January 2017
