@@ -79,6 +79,9 @@ The following functions of `class Threads` control threads. Items in all caps ar
 const memebers of `Threads` and are accessed as in `Threads::EMPTY`.
 
 ```C++
+// Get the id of the currently running thread
+int id();
+
 // Get the state; see class constants. Can be EMPTY, RUNNING, ENDED, SUSPENDED.
 int getState(int id);
 // Explicityly set a state. See getState(). Call with care.
@@ -214,12 +217,13 @@ context switch process:
 Todo
 -----------------------------
 
-1. Time slices smaller than 1 millisecond.
+1. Optimize assembler and other switching code
 2. Check for stack overflow during context_change() to aid in debugging; or
    have a stack that grows automatically if it gets close filling.
-3. Optimize assembly.
-4. Fully implement the new C++11 std::thread or POSIX threads. 
+3. Fully implement the new C++11 std::thread or POSIX threads. 
    See http://www.cplusplus.com/reference/thread/thread/.
+4. Time slices smaller than 1 millisecond. By comparison, typical Linux 
+   switches every 100 milliseconds.
 
 Other
 -----------------------------
