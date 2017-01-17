@@ -135,6 +135,7 @@ public:
   // the implementation. See notes of ThreadInfo.
   static const int MAX_THREADS = 8;
   static const int DEFAULT_STACK_SIZE = 1024;
+  static const int DEFAULT_TICKS = 100;
 
   // State of threading system
   static const int STARTED = 1;
@@ -193,6 +194,9 @@ public:
   int restart(int id);
   // Set the slice length time in ticks (1 tick = 1 millisecond)
   void setTimeSlice(int id, unsigned int ticks);
+
+  // Get the id of the currently running thread
+  int id();
 
   // Yield current thread's remaining time slice to the next thread, causing immediate
   // context switch

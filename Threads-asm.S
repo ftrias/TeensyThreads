@@ -58,7 +58,7 @@ context_switch:
   // easiest thing is to just ignore this condition.
   CMP lr, #0xFFFFFFF1      // this means we interrupted an interrupt
   BEQ to_exit              // so don't do anything until next time
-  
+
   // Count down number of ticks we should stay in thread
   LDR r0, =currentCount    // get the tick count (address to variable)
   LDR r1, [r0]             // get the value from the address

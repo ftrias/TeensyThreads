@@ -29,8 +29,9 @@ Threads::Threads() : thread_active(FIRST_RUN), current_thread(0), thread_count(0
   currentSave = &thread[0].save;
   currentMSP = 1;
   currentSP = 0;
+  currentActive = thread_active;
   thread[0].flags = RUNNING;
-  thread[0].ticks = 0;
+  thread[0].ticks = DEFAULT_TICKS;
 }
 
 /*
@@ -89,8 +90,8 @@ void Threads::getNextThread() {
  * this function is "naked" meaning it does not save it's registers
  * on the stack. This is so we can preserve the stack of the caller.
  *
- * Interrupts will save r0-r4 in the stack and since it's simple
- * and short, it should only use those registers.
+ * Interrupts will save r0-r4 in the stack and since this function 
+ * is short and simple, it should only use those registers.
  */
 extern volatile uint32_t systick_millis_count;
 void __attribute((naked)) systick_isr(void)
@@ -190,7 +191,7 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
       thread[i].stack_size = stack_size;
       void *psp = loadstack(p, arg, thread[i].stack, thread[i].stack_size);
       thread[i].sp = psp;
-      thread[i].ticks = 0;
+      thread[i].ticks = DEFAULT_TICKS;
       thread[i].flags = RUNNING;
       thread_active = old_state;
       thread_count++;
@@ -258,6 +259,14 @@ void Threads::yield() {
 void Threads::delay(int millisecond) {
   int mx = millis();
   while((int)millis() - mx < millisecond) yield();
+}
+
+int Threads::id() {
+  volatile int ret;
+  __asm volatile("CPSID I");
+  ret = current_thread;
+  __asm volatile("CPSIE I");
+  return ret;
 }
 
 
