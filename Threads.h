@@ -194,7 +194,10 @@ public:
   // Set the slice length time in ticks (1 tick = 1 millisecond)
   void setTimeSlice(int id, unsigned int ticks);
 
+  // Yield current thread's remaining time slice to the next thread, causing immediate
+  // context switch
   void yield();
+  // Wait for milliseconds using yield(), giving other slices your wait time
   void delay(int millisecond);
 
   // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN

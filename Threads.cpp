@@ -261,7 +261,6 @@ void Threads::delay(int millisecond) {
 }
 
 
-
 /*
  * On creation, stop threading and save state
  */

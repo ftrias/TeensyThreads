@@ -92,6 +92,14 @@ int kill(int id);
 int suspend(int id);
 // Restart a suspended thread.
 int restart(int id);
+// Set the slice length in ticks (1 tick = 1 millisecond)
+void setTimeSlice(int id, unsigned int ticks);
+
+// Yield current thread's remaining time slice to the next thread, causing
+// immedidate context switch
+void yield();
+// Wait for milliseconds using yield(), giving other slices your wait time
+void delay(int millisecond);
 
 // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
 // can optionally pass the previous state to restore
@@ -112,8 +120,9 @@ away. Here is an example:
 int state = 0;           // this should be "volatile int state"
 void thread1() { state = processData(); }
 void run() {
-  while (state<100);     // this line changed to 'if'
-  // do something
+  while (state<100) {     // this line changed to 'if'
+    // do something
+  }
 }
 ```
 
@@ -137,6 +146,7 @@ void run() {
   first.detach();
 }
 ```
+
 The following members are implemented:
 
 ```C++
@@ -204,14 +214,11 @@ context switch process:
 Todo
 -----------------------------
 
-1. Implement yielding functionality so threads can give up their time slices.
-2. Implement a delay() to give up time slices to other threads.
-3. Implement a priority or time slice length for each thread.
-4. Time slices smaller than 1 millisecond.
-5. Check for stack overflow during context_change() to aid in debugging; or
+1. Time slices smaller than 1 millisecond.
+2. Check for stack overflow during context_change() to aid in debugging; or
    have a stack that grows automatically if it gets close filling.
-6. Optimize assembly.
-7. Fully implement the new C++11 std::thread or POSIX threads. 
+3. Optimize assembly.
+4. Fully implement the new C++11 std::thread or POSIX threads. 
    See http://www.cplusplus.com/reference/thread/thread/.
 
 Other
