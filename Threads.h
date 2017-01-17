@@ -176,7 +176,7 @@ public:
     return addThread((ThreadFunction)p, (void*)arg, stack_size, stack);
   }
 
-  // Get the state; see class constants. Can be EMPTY, RUNNING, ENDED, SUSPENDED.
+  // Get the state; see class constants. Can be EMPTY, RUNNING, etc.
   int getState(int id);
   // Explicityly set a state. See getState(). Call with care.
   int setState(int id, int state);
@@ -232,7 +232,8 @@ namespace std {
     int destroy;     // flag to kill thread on instance destruction
   public:
     // By casting all (args...) to (void*), if there are more than one args, the compiler
-    // will fail to find a matching function
+    // will fail to find a matching function. This fancy template just allows any kind of
+    // function to match.
     template <class F, class ...Args> explicit thread(F&& f, Args&&... args) {
       id = threads.addThread((ThreadFunction)f, (void*)args...);
       destroy = 1;
@@ -245,12 +246,13 @@ namespace std {
     // that's not so. We emulate expected behavior anyway.
     bool joinable() { return destroy==1; }
     // Once detach() is called, thread runs until it terminates; otherwise it terminates
-    // when destructor called
+    // when destructor called.
     void detach() { destroy = 0; }
     // In theory, the thread merges with the running thread; if we just wait until
-    // termination, it's basically the same thing.
+    // termination, it's basically the same thing except it's slower because
+    // there are two threads running instead of one. Close enough.
     void join() { threads.wait(id); }
-    // Get the unique thread id
+    // Get the unique thread id.
     int get_id() { return id; }
   };
 }

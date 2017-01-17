@@ -1,15 +1,10 @@
 Teensy Threading Library
 ===================================================
 
-Copyright 2017 by Fernando Trias. All rights reserved.
-Revision 1, January 2017
-
-Overview
-------------------------------
-
 Teensy Threading Library uses the built-in threading support of the Cortex-M4
-to implement basic threading for the Teensy 3.x platform. It supports a 
-native interface and std::thread interface.
+to implement basic threading for the Teensy 3.x platform from 
+PJRC (https://www.pjrc.com/teensy/index.html). It supports a native 
+interface and std::thread interface.
 
 Simple example
 ------------------------------
@@ -77,10 +72,10 @@ a return.
 If a thread ends because the function returns, then the thread will be reused
 by a new function.
 
-If a stack has been allocated, it will be freed after a thread terminates,
-but only when a new thread is added.
+If a stack has been allocated by the library and not supplied by the caller, 
+it will be freed when a new thread is added, not when it terminates.
 
-The follwing functions of `class Threads` control threads. Items in all caps are
+The following functions of `class Threads` control threads. Items in all caps are
 const memebers of `Threads` and are accessed as in `Threads::EMPTY`.
 
 ```C++
@@ -88,7 +83,7 @@ const memebers of `Threads` and are accessed as in `Threads::EMPTY`.
 int getState(int id);
 // Explicityly set a state. See getState(). Call with care.
 int setState(int id, int state);
-// Wait until thread returns up to timeout_ms milliseconds. If ms is 0, wait
+// Wait until thread ends, up to timeout_ms milliseconds. If ms is 0, wait
 // indefinitely.
 int wait(int id, unsigned int timeout_ms = 0);
 // Permanently stop a running thread. Thread will end on the next thread slice tick.
@@ -99,8 +94,8 @@ int suspend(int id);
 int restart(int id);
 
 // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
-// can pass the previous state to restore
-int start(int old_state = -1);
+// can optionally pass the previous state to restore
+int start(int new_state = -1);
 // Stop threading system; returns previous state: STARTED, STOPPED, FIRST_RUN        
 int stop();
 ```
@@ -114,7 +109,7 @@ and another thread checks for it, the second thread's check may be optimized
 away. Here is an example:
 
 ```
-int state = 0;
+int state = 0;           // this should be "volatile int state"
 void thread1() { state = processData(); }
 void run() {
   while (state<100);     // this line changed to 'if'
@@ -130,7 +125,7 @@ optimizer will convert the `while (state<100)` into an `if` statement. Adding
 Alternative std::thread interface
 -----------------------------
 
-The header also supports the construction of minimal `std::thread` as indicated 
+The library also supports the construction of minimal `std::thread` as indicated 
 in C++11. `std::thread` always allocates it's own stack of the default size.
 See http://www.cplusplus.com/reference/thread/thread/
 
@@ -187,12 +182,12 @@ context switch process:
  *   reference manual under the Exception Model section.
  * - I tried coding this in asm embedded in Threads.cpp but the compiler
  *   optimizations kept changing my code and removing lines so I have to use
- *   a separate assembly file. But if you try it, make sure to declare the
+ *   a separate assembly file. But if you try C++, make sure to declare the
  *   function "naked" so the stack pointer SP is not modified when called.
  *   This means you can't use local variables, which are stored in stack. 
  *   Also turn optimizations off using optimize("O0").
  * - Function is called from systick_isr (also naked) via a branch. Again, this is
- *   to preserve the stack and LR.
+ *   to preserve the stack and LR. We override the default systick_isr().
  * - Since Systick can be called from within another interrupt, we check
  *   for this and abort.
  * - Teensy uses MSP for it's main thread; we preserve that. Alternatively, we
@@ -209,12 +204,18 @@ context switch process:
 Todo
 -----------------------------
 
-1. Implement yielding functionality so threads can give up their time slices
-2. Implement a delay() to give up time slices to other threads
-3. Implement a priority or time slice length for each thread
-4. Time slices smaller than 1 millisecond
+1. Implement yielding functionality so threads can give up their time slices.
+2. Implement a delay() to give up time slices to other threads.
+3. Implement a priority or time slice length for each thread.
+4. Time slices smaller than 1 millisecond.
 5. Check for stack overflow during context_change() to aid in debugging; or
    have a stack that grows automatically if it gets close filling.
-6. Optimize assembly
+6. Optimize assembly.
 7. Fully implement the new C++11 std::thread or POSIX threads. 
-   See http://www.cplusplus.com/reference/thread/thread/
+   See http://www.cplusplus.com/reference/thread/thread/.
+
+Other
+-----------------------------
+
+Copyright 2017 by Fernando Trias. All rights reserved.
+Revision 1, January 2017
