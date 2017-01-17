@@ -1,6 +1,6 @@
 #include <Threads.h>
 
-volatile int count = 0;
+volatile long int count = 0;
 
 void thread_func(int inc) {
   while(1) count += inc;
@@ -12,5 +12,5 @@ void setup() {
 
 void loop() {
   Serial.println(count);
-  delay(1000);
+  threads.delay(1000);
 }

@@ -55,6 +55,7 @@
 
 extern "C" {
   void context_switch(void);
+  void context_switch_direct(void);
   void systick_isr(void);
   void loadNextThread();
 }
@@ -117,6 +118,7 @@ class ThreadInfo {
     software_stack_t save;
     int flags = 0;
     void *sp;
+    int ticks;
 };
 
 typedef void (*ThreadFunction)(void*);
@@ -189,6 +191,11 @@ public:
   int suspend(int id);
   // Restart a suspended thread.
   int restart(int id);
+  // Set the slice length time in ticks (1 tick = 1 millisecond)
+  void setTimeSlice(int id, unsigned int ticks);
+
+  void yield();
+  void delay(int millisecond);
 
   // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
   // can pass the previous state to restore
@@ -198,6 +205,7 @@ public:
 
   // Allow these static functions and classes to access our members
   friend void context_switch(void); 
+  friend void context_switch_direct(void); 
   friend void systick_isr(void);
   friend void loadNextThread();
   friend class ThreadLock;
@@ -205,6 +213,7 @@ public:
 protected:
   void getNextThread();
   void *loadstack(ThreadFunction p, void * arg, void *stackaddr, int stack_size);
+  static void force_switch_isr();
 
 private:
   static void del_process(void);

@@ -38,8 +38,14 @@
 
   .syntax unified
   .align  2
-  .global context_switch
   .thumb
+
+  .global context_switch_direct
+context_switch_direct:
+  CPSID IF
+  B call_direct
+
+  .global context_switch
 context_switch:
 
   // Disable all interrupts; if we get interrupted during a context switch this
@@ -50,11 +56,19 @@ context_switch:
   // wreck the system. In theory, we could reschedule the switch until the
   // other interrupt is done. Or we could do a more sophisticated switch, but the
   // easiest thing is to just ignore this condition.
-  CMP lr, #0xFFFFFFF1      // this means caller was an interrupt
-  BNE call_ok
-  cpsie if                 // re-enable interrupts
-  BX lr                    // exit to caller
-  call_ok:
+  CMP lr, #0xFFFFFFF1      // this means we interrupted an interrupt
+  BEQ to_exit              // so don't do anything until next time
+  
+  // Count down number of ticks we should stay in thread
+  LDR r0, =currentCount    // get the tick count (address to variable)
+  LDR r1, [r0]             // get the value from the address
+  CMP r1, #0               // is it 0?
+  BEQ call_direct          // if so, thread is done, so switch
+  SUB r1, #1               // otherwise, subtract 1 tick
+  STR r1, [r0]             // and put it back
+  B to_exit                // and quit until next context_switch
+
+  call_direct:
   
   // Save the r4-r11 registers; (r0-r3,r12 are saved by the interrupt handler).
   // Most thread libraries save this to the thread stack. I don't for simplicity

@@ -8,10 +8,12 @@
 
 Threads threads;
 
-// These variables are used buy the assembly context_switch function.
+// These variables are used by the assembly context_switch() function.
 // They are copies or pointers to data in Threads and ThreadInfo
 // and put here seperately in order to simplify the code.
 extern "C" {
+  int currentActive;
+  int currentCount;
   ThreadInfo *currentThread;
   void *currentSave;
   int currentMSP;
@@ -28,6 +30,7 @@ Threads::Threads() : thread_active(FIRST_RUN), current_thread(0), thread_count(0
   currentMSP = 1;
   currentSP = 0;
   thread[0].flags = RUNNING;
+  thread[0].ticks = 0;
 }
 
 /*
@@ -77,6 +80,8 @@ void Threads::getNextThread() {
   currentSave = &thread[current_thread].save;
   currentMSP = (current_thread==0?1:0);
   currentSP = thread[current_thread].sp;
+  currentCount = thread[current_thread].ticks;
+  currentActive = thread_active;
 }
 
 /* 
@@ -94,6 +99,16 @@ void __attribute((naked)) systick_isr(void)
   if (threads.thread_active == Threads::STARTED) { // switch only if active
     // we branch in order to preserve LR and the stack
     __asm volatile("b context_switch");
+  }
+  __asm volatile("bx lr");
+}
+
+void __attribute((naked)) svcall_isr(void)
+{
+  register int *rsp __asm("sp");
+  int svc = ((uint8_t*)rsp[6])[-2];
+  if (svc == 0x21) {
+    __asm volatile("b context_switch_direct");
   }
   __asm volatile("bx lr");
 }
@@ -175,6 +190,7 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
       thread[i].stack_size = stack_size;
       void *psp = loadstack(p, arg, thread[i].stack, thread[i].stack_size);
       thread[i].sp = psp;
+      thread[i].ticks = 0;
       thread[i].flags = RUNNING;
       thread_active = old_state;
       thread_count++;
@@ -190,11 +206,13 @@ int Threads::getState(int id)
 {
   return thread[id].flags;
 }
+
 int Threads::setState(int id, int state)
 {
   thread[id].flags = state;
   return state;
 }
+
 int Threads::wait(int id, unsigned int timeout_ms)
 {
   unsigned int start = millis();
@@ -205,24 +223,44 @@ int Threads::wait(int id, unsigned int timeout_ms)
     if (timeout_ms != 0 && millis() - start > timeout_ms) return -1;
     state = thread[id].flags;
     if (state != RUNNING) break;
+    yield();
   }
   return id;
 }
+
 int Threads::kill(int id)
 {
   thread[id].flags = ENDED;
   return id;
 }
+
 int Threads::suspend(int id)
 {
   thread[id].flags = SUSPENDED;
   return id;
 }
+
 int Threads::restart(int id)
 {
   thread[id].flags = RUNNING;
   return id;
 }
+
+void Threads::setTimeSlice(int id, unsigned int ticks)
+{
+  thread[id].ticks = ticks - 1;
+}
+
+void Threads::yield() {
+  __asm volatile("svc 0x21");
+}
+
+void Threads::delay(int millisecond) {
+  int mx = millis();
+  while((int)millis() - mx < millisecond) yield();
+}
+
+
 
 /*
  * On creation, stop threading and save state
