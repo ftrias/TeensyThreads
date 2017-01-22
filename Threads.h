@@ -107,6 +107,42 @@ typedef struct {
   uint32_t r9;
   uint32_t r10;
   uint32_t r11;
+  uint32_t lr;
+#ifdef __ARM_PCS_VFP
+  uint32_t s0;
+  uint32_t s1;
+  uint32_t s2;
+  uint32_t s3;
+  uint32_t s4;
+  uint32_t s5;
+  uint32_t s6;
+  uint32_t s7;
+  uint32_t s8;
+  uint32_t s9;
+  uint32_t s10;
+  uint32_t s11;
+  uint32_t s12;
+  uint32_t s13;
+  uint32_t s14;
+  uint32_t s15;
+  uint32_t s16;
+  uint32_t s17;
+  uint32_t s18;
+  uint32_t s19;
+  uint32_t s20;
+  uint32_t s21;
+  uint32_t s22;
+  uint32_t s23;
+  uint32_t s24;
+  uint32_t s25;
+  uint32_t s26;
+  uint32_t s27;
+  uint32_t s28;
+  uint32_t s29;
+  uint32_t s30;
+  uint32_t s31;
+  uint32_t fpscr;
+#endif
 } software_stack_t;
 
 // The state of each thread (including thread 0)
@@ -146,7 +182,8 @@ public:
   static const int EMPTY = 0;
   static const int RUNNING = 1;
   static const int ENDED = 2;
-  static const int SUSPENDED = 3;
+  static const int ENDING = 3;
+  static const int SUSPENDED = 4;
 
 protected:
   int thread_active;
@@ -197,6 +234,8 @@ public:
 
   // Get the id of the currently running thread
   int id();
+  int getStackUsed(int id);
+  int getStackRemaining(int id);
 
   // Yield current thread's remaining time slice to the next thread, causing immediate
   // context switch

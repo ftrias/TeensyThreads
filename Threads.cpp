@@ -29,6 +29,7 @@ Threads::Threads() : thread_active(FIRST_RUN), current_thread(0), thread_count(0
   currentSave = &thread[0].save;
   currentMSP = 1;
   currentSP = 0;
+  currentCount = Threads::DEFAULT_TICKS;
   currentActive = thread_active;
   thread[0].flags = RUNNING;
   thread[0].ticks = DEFAULT_TICKS;
@@ -38,11 +39,11 @@ Threads::Threads() : thread_active(FIRST_RUN), current_thread(0), thread_count(0
  * start() - Begin threading
  */
 int Threads::start(int prev_state) {
-  __asm volatile("CPSID IF");
+  __asm volatile("CPSID I");
   int old_state = thread_active;
   if (prev_state == -1) prev_state = STARTED;
   thread_active = prev_state;
-  __asm volatile("CPSIE IF");  
+  __asm volatile("CPSIE I");  
   return old_state;
 }
 
@@ -53,10 +54,10 @@ int Threads::start(int prev_state) {
  * because it could destabalize the system if thread 0 is stopped.
  */
 int Threads::stop() {
-  __asm volatile("CPSID IF");
+  __asm volatile("CPSID I");
   int old_state = thread_active;
   thread_active = STOPPED;
-  __asm volatile("CPSIE IF");  
+  __asm volatile("CPSIE I");  
   return old_state; 
 }
 
@@ -193,6 +194,7 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
       thread[i].sp = psp;
       thread[i].ticks = DEFAULT_TICKS;
       thread[i].flags = RUNNING;
+      thread[i].save.lr = 0xFFFFFFF9;
       thread_active = old_state;
       thread_count++;
       if (old_state == STARTED || old_state == FIRST_RUN) start();
@@ -269,6 +271,12 @@ int Threads::id() {
   return ret;
 }
 
+int Threads::getStackUsed(int id) {
+  return thread[id].stack + thread[id].stack_size - (uint8_t*)thread[id].sp;
+}
+int Threads::getStackRemaining(int id) {
+  return (uint8_t*)thread[id].sp - thread[id].stack;
+}
 
 /*
  * On creation, stop threading and save state
