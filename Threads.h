@@ -322,6 +322,23 @@ namespace std {
     // Get the unique thread id.
     int get_id() { return id; }
   };
+
+  class mutex {
+    private:
+      Threads::Mutex mx;
+    public:
+      void lock() { mx.lock(); }
+      bool try_lock() { return mx.try_lock(); }
+      void unlock() { mx.unlock(); }
+  };
+
+  template <class Mutex> class lock_guard {
+    private:
+      Mutex *r;
+    public:
+      explicit lock_guard(Mutex& m) { r = &m; r->lock(); }
+      ~lock_guard() { r->unlock(); }
+  };
 }
 
 #endif

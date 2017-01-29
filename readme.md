@@ -156,7 +156,8 @@ Alternative std::thread interface
 -----------------------------
 
 The library also supports the construction of minimal `std::thread` as indicated 
-in C++11. `std::thread` always allocates it's own stack of the default size.
+in C++11. `std::thread` always allocates it's own stack of the default size. In
+addition, a minimal `std::mutex` and `std::lock_guard` are also implemented.
 See http://www.cplusplus.com/reference/thread/thread/
 
 Example:
@@ -171,10 +172,22 @@ void run() {
 The following members are implemented:
 
 ```C++
-bool joinable();
-void detach();
-void join();
-int get_id();
+namespace std {
+  class thread {
+    bool joinable();
+    void detach();
+    void join();
+    int get_id();
+  }
+  class mutex {
+    void lock();
+    bool try_lock();
+    void unlock();
+  };
+  template <class Mutex> class lock_guard {
+    lock_guard(Mutex& m);
+  }
+}
 ```
 
 Notes on implementation
@@ -183,8 +196,9 @@ Notes on implementation
 Threads take turns on the CPU and are switched by the `context_switch()`
 function, written in assembly. This function is called by the SysTick ISR. The
 library overrides the default `systick_isr()` to accomplish switching. On the
-Teensy by default, each tick is  1 millisecond long. This means that each
-thread will run for 1 millisecond at a time.
+Teensy by default, each tick is 1 millisecond long. By default, each thread
+runs for 100 ticks, or 100 milliseconds, but this can be changed by
+`setTimeSlice()`.
 
 Much of the Teensy core software is thread-safe, but not all. When in doubt,
 stop and restart threading in critical areas. In general, functions that share
