@@ -77,13 +77,6 @@ extern "C" {
  *   }
  *
  */
-class ThreadLock {
-private:
-  int save_state;
-public:
-  ThreadLock();      // Stop threads and save thread state
-  ~ThreadLock();     // Restore saved state
-};
 
 // The stack frame saved by th interrupt
 typedef struct {
@@ -263,6 +256,25 @@ protected:
 
 private:
   static void del_process(void);
+
+public:
+  class Mutex {
+  private:
+    volatile int state = 0;
+  public:
+    int getState(); // get the lock state; 1=locked; 0=unlocked
+    int lock(unsigned int timeout_ms = 0); // lock, optionally waiting up to timeout_ms milliseconds
+    int try_lock(); // if lock available, get it and return 1; otherwise return 0
+    int unlock();   // unlock if locked
+  };
+
+  class Lock {
+  private:
+    int save_state;
+  public:
+    Lock();      // Stop threads and save thread state
+    ~Lock();     // Restore saved state
+  };
 };
 
 extern Threads threads;

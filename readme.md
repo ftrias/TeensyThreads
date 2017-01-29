@@ -1,10 +1,9 @@
 Teensy Threading Library
 ===================================================
 
-Teensy Threading Library uses the built-in threading support of the Cortex-M4
-to implement basic preemptive threading for the Teensy 3.x platform from 
-PJRC (https://www.pjrc.com/teensy/index.html). It supports a native 
-interface and std::thread interface.
+Teensy Threading Library implements preemptive threads for the Teensy
+3.x platform from PJRC (https://www.pjrc.com/teensy/index.html). It supports
+a native interface and a `std::thread` interface.
 
 Simple example
 ------------------------------
@@ -76,39 +75,58 @@ If a stack has been allocated by the library and not supplied by the caller,
 it will be freed when a new thread is added, not when it terminates.
 
 The following functions of `class Threads` control threads. Items in all caps are
-const memebers of `Threads` and are accessed as in `Threads::EMPTY`.
+const members of `Threads` and are accessed as in `Threads::EMPTY`.
 
 ```C++
-// Get the id of the currently running thread
-int id();
+class Threads {
+  // Get the id of the currently running thread
+  int id();
 
-// Get the state; see class constants. Can be EMPTY, RUNNING, ENDED, SUSPENDED.
-int getState(int id);
-// Explicityly set a state. See getState(). Call with care.
-int setState(int id, int state);
-// Wait until thread ends, up to timeout_ms milliseconds. If ms is 0, wait
-// indefinitely.
-int wait(int id, unsigned int timeout_ms = 0);
-// Permanently stop a running thread. Thread will end on the next thread slice tick.
-int kill(int id);
-// Suspend a thread (on the next slice tick). Can be restarted with restart().
-int suspend(int id);
-// Restart a suspended thread.
-int restart(int id);
-// Set the slice length in ticks (1 tick = 1 millisecond)
-void setTimeSlice(int id, unsigned int ticks);
+  // Get the state; see class constants. Can be EMPTY, RUNNING, ENDED, SUSPENDED.
+  int getState(int id);
+  // Explicityly set a state. See getState(). Call with care.
+  int setState(int id, int state);
+  // Wait until thread ends, up to timeout_ms milliseconds. If ms is 0, wait
+  // indefinitely.
+  int wait(int id, unsigned int timeout_ms = 0);
+  // Permanently stop a running thread. Thread will end on the next thread slice tick.
+  int kill(int id);
+  // Suspend a thread (on the next slice tick). Can be restarted with restart().
+  int suspend(int id);
+  // Restart a suspended thread.
+  int restart(int id);
+  // Set the slice length in ticks (1 tick = 1 millisecond)
+  void setTimeSlice(int id, unsigned int ticks);
 
-// Yield current thread's remaining time slice to the next thread, causing
-// immedidate context switch
-void yield();
-// Wait for milliseconds using yield(), giving other slices your wait time
-void delay(int millisecond);
+  // Yield current thread's remaining time slice to the next thread, causing
+  // immedidate context switch
+  void yield();
+  // Wait for milliseconds using yield(), giving other slices your wait time
+  void delay(int millisecond);
 
-// Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
-// can optionally pass the previous state to restore
-int start(int new_state = -1);
-// Stop threading system; returns previous state: STARTED, STOPPED, FIRST_RUN        
-int stop();
+  // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
+  // can optionally pass the previous state to restore
+  int start(int new_state = -1);
+  // Stop threading system; returns previous state: STARTED, STOPPED, FIRST_RUN        
+  int stop();
+};
+```
+
+In addition, the Threads class has a member class for mutexes (or locks):
+
+```C++
+  class Mutex {
+    int getState(); // get the lock state; 1=locked; 0=unlocked
+    int lock(unsigned int timeout_ms = 0); // lock, optionally waiting up to timeout_ms milliseconds
+    int try_lock(); // if lock available, get it and return 1; otherwise return 0
+    int unlock();   // unlock if locked
+  };
+
+  // example:
+  Threads::Mutex mylock;
+  mylock.lock();
+  x = 1;
+  mylock.unlock();
 ```
 
 Usage notes
@@ -120,10 +138,10 @@ and another thread checks for it, the second thread's check may be optimized
 away. Here is an example:
 
 ```
-int state = 0;           // this should be "volatile int state"
+int state = 0;            // this should be "volatile int state"
 void thread1() { state = processData(); }
 void run() {
-  while (state<100) {     // this line changed to 'if'
+  while (state < 100) {   // this line changed to 'if'
     // do something
   }
 }
@@ -162,18 +180,17 @@ int get_id();
 Notes on implementation
 -----------------------------
 
-Threads take turns on the CPU and are switched by the `context_switch()` function,
-written in assembly.
-This function is called by the SysTick ISR. The library overrides the default
-`systick_isr()` to accomplish switching. On the Teensy by default, each tick is 
-1 millisecond long. This means that each thread will run for 1 millisecond at
-a time.
+Threads take turns on the CPU and are switched by the `context_switch()`
+function, written in assembly. This function is called by the SysTick ISR. The
+library overrides the default `systick_isr()` to accomplish switching. On the
+Teensy by default, each tick is  1 millisecond long. This means that each
+thread will run for 1 millisecond at a time.
 
-Much of the Teensy core software is thread-safe, but not all. When in doubt, 
+Much of the Teensy core software is thread-safe, but not all. When in doubt,
 stop and restart threading in critical areas. In general, functions that share
-global variables or state should not be called on different threads at the same
-time. For example, don't use Serial in two different threads simultaneously; it's
-ok to make calls on different threads at different times.
+global variables or state should not be called on different threads at the
+same time. For example, don't use Serial in two different threads
+simultaneously; it's ok to make calls on different threads at different times.
 
 The code comments on the source code give some technical explanation of the 
 context switch process:
@@ -182,17 +199,17 @@ context switch process:
 /*
  * context_switch() changes the context to a new thread. It follows this strategy:
  *
- * 1. Abort if called from within another interrupt
- * 2. Save registers r4-r11 to the current thread state
+ * 1. Abort if called from within an interrupt
+ * 2. Save registers r4-r11 to the current thread state (s0-s31 is using FPU)
  * 3. If not running on MSP, save PSP to the current thread state
  * 4. Get the next running thread state
- * 5. Restore r4-r11 from thread state
+ * 5. Restore r4-r11 from thread state (s0-s31 for FPU)
  * 6. Set MSP or PSP depending on state
  * 7. Switch MSP/PSP on return
  *
  * Notes:
- * - Cortex-M4 has two stack pointers, MSP and PSP, which we alternate. See the 
- *   reference manual under the Exception Model section.
+ * - Cortex-M4 has two stack pointers, MSP and PSP, which I alternate. See the 
+ *   CPU reference manual under the Exception Model section.
  * - I tried coding this in asm embedded in Threads.cpp but the compiler
  *   optimizations kept changing my code and removing lines so I have to use
  *   a separate assembly file. But if you try C++, make sure to declare the
@@ -200,10 +217,10 @@ context switch process:
  *   This means you can't use local variables, which are stored in stack. 
  *   Also turn optimizations off using optimize("O0").
  * - Function is called from systick_isr (also naked) via a branch. Again, this is
- *   to preserve the stack and LR. We override the default systick_isr().
- * - Since Systick can be called from within another interrupt, we check
+ *   to preserve the stack and LR. I override the default systick_isr().
+ * - Since Systick can be called from within another interrupt, I check
  *   for this and abort.
- * - Teensy uses MSP for it's main thread; we preserve that. Alternatively, we
+ * - Teensy uses MSP for it's main thread; I preserve that. Alternatively, I
  *   could have used PSP for all threads, including main, and reserve MSP for
  *   interrupts only. This would simplify the code slightly, but could introduce
  *   incompatabilities.
@@ -217,23 +234,24 @@ context switch process:
 Todo
 -----------------------------
 
-1. Optimize assembler and other switching code
-2. Check for stack overflow during context_change() to aid in debugging; or
+1. Optimize assembler and other switching code.
+2. Support unlimited threads.
+3. Check for stack overflow during context_change() to aid in debugging; or
    have a stack that grows automatically if it gets close filling.
-3. Fully implement the new C++11 std::thread or POSIX threads. 
+4. Fully implement the new C++11 std::thread or POSIX threads. 
    See http://www.cplusplus.com/reference/thread/thread/.
-4. Time slices smaller than 1 millisecond. By comparison, typical Linux 
-   switches every 100 milliseconds.
+5. Time slices smaller than 1 millisecond for high responsiveness. By comparison, 
+   typical Linux switches every 100 milliseconds.
 
 Other
 -----------------------------
 
 This project came about because I was coding a Teensy application with
 multiple things happening at the same time, whistfully reminiscing about
-multithreading available in other OSs. I searched for threading
-tools, but found nothing. This combined with boredom and abundant
-free time resulting in complete overkill for the solution and thus this
-implementation of preemptive threads.
+multithreading available in other OSs. I searched for threading tools, but
+found nothing. This combined with boredom and abundant free time resulting in
+complete overkill for the solution and thus this implementation of preemptive
+threads.
 
 Copyright 2017 by Fernando Trias. All rights reserved.
 Revision 1, January 2017

@@ -4,11 +4,11 @@
  *
  * context_switch() changes the context to a new thread. It follows this strategy:
  *
- * 1. Abort if called from within another interrupt
- * 2. Save registers r4-r11 to the current thread state
+ * 1. Abort if called from within an interrupt
+ * 2. Save registers r4-r11 to the current thread state (s0-s31 for FPU)
  * 3. If not running on MSP, save PSP to the current thread state
  * 4. Get the next running thread state
- * 5. Restore r4-r11 from thread state
+ * 5. Restore r4-r11 from thread state (s0-s31)
  * 6. Set MSP or PSP depending on state
  * 7. Switch MSP/PSP on return
  *
@@ -49,7 +49,7 @@ context_switch_direct:
 context_switch:
 
   // Disable all interrupts; if we get interrupted during a context switch this
-  // could corrupt the system
+  // could corrupt the system.
   CPSID I
 
   // Did we interrupt another interrupt? If so, don't switch. Switching would
@@ -58,7 +58,7 @@ context_switch:
   // easiest thing is to just ignore this condition.
   CMP lr, #0xFFFFFFF1      // this means we interrupted an interrupt
   BEQ to_exit              // so don't do anything until next time
-  CMP lr, #0xFFFFFFE1      // this means we interrupted an interrupt
+  CMP lr, #0xFFFFFFE1      // this means we interrupted an interrupt with FPU
   BEQ to_exit              // so don't do anything until next time
 
   // Count down number of ticks we should stay in thread
@@ -80,7 +80,7 @@ context_switch:
   LDR r0, [r0]                 // get the pointer itself
   STMIA r0!, {r4-r11,lr}       // save r4-r11 to buffer
 
-#ifdef __ARM_PCS_VFP
+#ifdef __ARM_PCS_VFP           // compile if using FPU
   VSTMIA r0!, {s0-s31}         // save all FPU registers
   VMRS r1, FPSCR               // and FPU app status register
   STMIA r0!, {r1}
@@ -88,7 +88,7 @@ context_switch:
 
   // Are we running on thread 0, which is MSP?
   // It so, there is no need to save the stack pointer because MSP is never changed.
-  // If not, save the stack pointer
+  // If not, save the stack pointer.
   LDR r0, =currentMSP          // get the address of the variable
   LDR r0, [r0]                 // get value from address
   CMP r0, #0                   // it is 0? This means it's PSP
@@ -103,24 +103,23 @@ context_switch:
   // Restore the r4-r11 registers from the saved thread
   LDR r0, =currentSave         // get address of pointer save buffer
   LDR r0, [r0]                 // get the actual pointer
-  LDMIA r0!, {r4-r11,lr}       // and restore r4-r11 from save buffer
+  LDMIA r0!, {r4-r11,lr}       // and restore r4-r11 & lr from save buffer
 
-#ifdef __ARM_PCS_VFP
+#ifdef __ARM_PCS_VFP           // compile if using FPU
   VLDMIA r0!, {s0-s31}         // restore all FPU registers
   LDMIA r0!, {r1}              // and the FP app status register
   VMSR FPSCR, r1
 #endif
 
-  // Setting LR causes the handler to switch MSP/PSP when returning
-  // Switching to MSP? no need to restore MSP
+  // Setting LR causes the handler to switch MSP/PSP when returning.
+  // Switching to MSP? no need to restore MSP.
   AND lr, lr, #0x10            // return stack with FP bit?
   ORR lr, lr, #0xFFFFFFE9      // add basic LR bits
   LDR r0, =currentMSP          // get address of the variable
   LDR r0, [r0]                 // get the actual value
   CMP r0, #0                   // is it 0? Then it's PSP
-  BEQ current_is_psp           // it's 0, so it's PSP
-  b to_exit
-current_is_psp:
+  BNE to_exit                  // it's not 0, so it's MSP, all done
+                               // if it's PSP, we need to switch PSP
   LDR r0, =currentSP           // get address of stack pointer
   LDR r0, [r0]                 // get the actual value
   MSR psp, r0                  // save it to PSP

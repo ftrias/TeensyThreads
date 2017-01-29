@@ -281,7 +281,7 @@ int Threads::getStackRemaining(int id) {
 /*
  * On creation, stop threading and save state
  */
-ThreadLock::ThreadLock() {
+Threads::Lock::Lock() {
   __asm volatile("CPSID I");
   save_state = threads.thread_active;
   threads.thread_active = 0;
@@ -291,8 +291,45 @@ ThreadLock::ThreadLock() {
 /*
  * On destruction, restore threading state
  */
-ThreadLock::~ThreadLock() {
+Threads::Lock::~Lock() {
   __asm volatile("CPSID I");  
   threads.thread_active = save_state;
   __asm volatile("CPSIE I");
+}
+
+int Threads::Mutex::getState() {
+  int p = threads.stop();
+  int ret = state;
+  threads.start(p);
+  return ret;
+}
+
+int Threads::Mutex::lock(unsigned int timeout_ms) {
+  int p;
+  uint32_t start = systick_millis_count;
+  while (1) {
+    p = try_lock();
+    if (p) return 1;
+    if (timeout_ms && (systick_millis_count - start > timeout_ms)) return 0;
+    threads.yield();
+  }
+  return 0;
+}
+
+int Threads::Mutex::try_lock() {
+  int p = threads.stop();
+  if (state == 0) {
+    state = 1;
+    threads.start(p);
+    return 1;
+  }
+  threads.start(p);
+  return 0;
+}
+
+int Threads::Mutex::unlock() {
+  int p = threads.stop();
+  state = 0;
+  threads.start(p);
+  return 1;
 }
