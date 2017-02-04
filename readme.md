@@ -121,12 +121,20 @@ In addition, the Threads class has a member class for mutexes (or locks):
     int try_lock(); // if lock available, get it and return 1; otherwise return 0
     int unlock();   // unlock if locked
   };
+  class Scope {
+      Scope(Mutex& m);
+      ~Scope();
+  };
 
   // example:
   Threads::Mutex mylock;
   mylock.lock();
   x = 1;
   mylock.unlock();
+  if (y) {
+    Threads::Scope m(mylock); // lock on creation
+    x = 2;
+  }                           // unlock at destruction
 ```
 
 Usage notes

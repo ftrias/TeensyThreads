@@ -268,6 +268,14 @@ public:
     int unlock();   // unlock if locked
   };
 
+  class Scope {
+    private:
+      Mutex *r;
+    public:
+      Scope(Mutex& m) { r = &m; r->lock(); }
+      ~Scope() { r->unlock(); }
+  };
+
   class Lock {
   private:
     int save_state;
@@ -332,11 +340,11 @@ namespace std {
       void unlock() { mx.unlock(); }
   };
 
-  template <class Mutex> class lock_guard {
+  template <class cMutex> class lock_guard {
     private:
-      Mutex *r;
+      cMutex *r;
     public:
-      explicit lock_guard(Mutex& m) { r = &m; r->lock(); }
+      explicit lock_guard(cMutex& m) { r = &m; r->lock(); }
       ~lock_guard() { r->unlock(); }
   };
 }
