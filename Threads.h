@@ -163,8 +163,8 @@ public:
   // The maximum number of threads is hard-coded to simplify
   // the implementation. See notes of ThreadInfo.
   static const int MAX_THREADS = 8;
-  static const int DEFAULT_STACK_SIZE = 1024;
-  static const int DEFAULT_TICKS = 100;
+  int DEFAULT_STACK_SIZE = 1024;
+  int DEFAULT_TICKS = 100;
 
   // State of threading system
   static const int STARTED = 1;
@@ -199,13 +199,13 @@ public:
 
   // Create a new thread for function "p", passing argument "arg". If stack is 0,
   // stack allocated on heap. Function "p" has form "void p(void *)".
-  int addThread(ThreadFunction p, void * arg=0, int stack_size=DEFAULT_STACK_SIZE, void *stack=0);
+  int addThread(ThreadFunction p, void * arg=0, int stack_size=-1, void *stack=0);
   // For: void f(int)
-  int addThread(ThreadFunctionInt p, int arg=0, int stack_size=DEFAULT_STACK_SIZE, void *stack=0) {
+  int addThread(ThreadFunctionInt p, int arg=0, int stack_size=-1, void *stack=0) {
     return addThread((ThreadFunction)p, (void*)arg, stack_size, stack);
   }
   // For: void f()
-  int addThread(ThreadFunctionNone p, int arg=0, int stack_size=DEFAULT_STACK_SIZE, void *stack=0) {
+  int addThread(ThreadFunctionNone p, int arg=0, int stack_size=-1, void *stack=0) {
     return addThread((ThreadFunction)p, (void*)arg, stack_size, stack);
   }
 
@@ -222,8 +222,12 @@ public:
   int suspend(int id);
   // Restart a suspended thread.
   int restart(int id);
-  // Set the slice length time in ticks (1 tick = 1 millisecond)
+  // Set the slice length time in ticks for a thread (1 tick = 1 millisecond)
   void setTimeSlice(int id, unsigned int ticks);
+  // Set the slice length time in ticks for all new threads (1 tick = 1 millisecond)
+  void setDefaultTimeSlice(unsigned int ticks);
+  // Set the stack size for new threads in bytes
+  void setDefaultStackSize(unsigned int bytes);
 
   // Get the id of the currently running thread
   int id();

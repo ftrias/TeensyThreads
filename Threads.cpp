@@ -176,6 +176,7 @@ void *Threads::loadstack(ThreadFunction p, void * arg, void *stackaddr, int stac
 int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack)
 {
   int old_state = stop();
+  if (stack_size == -1) stack_size = DEFAULT_STACK_SIZE;
   for (int i=1; i < MAX_THREADS; i++) {
     if (thread[i].flags == ENDED || thread[i].flags == EMPTY) { // free thread
       if (thread[i].stack && thread[i].my_stack) {
@@ -252,6 +253,16 @@ int Threads::restart(int id)
 void Threads::setTimeSlice(int id, unsigned int ticks)
 {
   thread[id].ticks = ticks - 1;
+}
+
+void Threads::setDefaultTimeSlice(unsigned int ticks)
+{
+  DEFAULT_TICKS = ticks - 1;
+}
+
+void Threads::setDefaultStackSize(unsigned int bytes)
+{
+  DEFAULT_STACK_SIZE = bytes;
 }
 
 void Threads::yield() {

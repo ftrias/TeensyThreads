@@ -83,7 +83,7 @@ void runtest() {
   id1 = threads.addThread(my_priv_func1, 1);
   threads.setTimeSlice(id1, 200);
   delayx(2000);
-  float expected = (float)save_p * 2.0*200.0 / ((float)Threads::DEFAULT_TICKS + 200.0);
+  float expected = (float)save_p * 2.0*200.0 / ((float)threads.DEFAULT_TICKS + 200.0);
   rate = (float)p1 / (float)expected;
   if (rate > 0.9 && rate < 1.1) Serial.println("OK");
   else Serial.println("***FAIL***");
