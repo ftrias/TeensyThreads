@@ -262,18 +262,28 @@ Todo
    have a stack that grows automatically if it gets close filling.
 4. Fully implement the new C++11 std::thread or POSIX threads. 
    See http://www.cplusplus.com/reference/thread/thread/.
-5. Time slices smaller than 1 millisecond for high responsiveness. By comparison, 
-   typical Linux switches every 100 milliseconds.
+
+Changes
+-----------------------------
+
+Revision 2: March 2017
+1. Change default time slice to 10 milliseconds
+2. Add setDefaultTimeSlice(), setDefaultStackSize().
+3. Support slices smaller than 1 ms using IntervalTimer; see setMicroTimer().
 
 Other
 -----------------------------
 
+See this thread for development discussion:
+
+https://forum.pjrc.com/threads/41504-Teensy-3-x-multithreading-library-first-release
+
 This project came about because I was coding a Teensy application with
 multiple things happening at the same time, whistfully reminiscing about
 multithreading available in other OSs. I searched for threading tools, but
-found nothing. This combined with boredom and abundant free time resulting in
-complete overkill for the solution and thus this implementation of preemptive
-threads.
+found nothing for my situation. This combined with boredom and abundant free time 
+resulting in complete overkill for the solution and thus this implementation of 
+preemptive threads.
 
 Copyright 2017 by Fernando Trias. All rights reserved.
-Revision 1, January 2017
+Revision 2, March 2017

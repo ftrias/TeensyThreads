@@ -4,11 +4,11 @@
  *
  * context_switch() changes the context to a new thread. It follows this strategy:
  *
- * 1. Abort if called from within an interrupt
+ * 1. Abort if called from within an interrupt (unless using PIT)
  * 2. Save registers r4-r11 to the current thread state (s0-s31 for FPU)
  * 3. If not running on MSP, save PSP to the current thread state
  * 4. Get the next running thread state
- * 5. Restore r4-r11 from thread state (s0-s31)
+ * 5. Restore r4-r11 from thread state (s0-s31 for FPU)
  * 6. Set MSP or PSP depending on state
  * 7. Switch MSP/PSP on return
  *
@@ -22,8 +22,11 @@
  *   This means you can't use local variables, which are stored in stack. 
  *   Try to turn optimizations off using optimize("O0") (which doesn't really
  *   turn off all optimizations).
- * - Function is called from systick_isr (also naked) via a branch. Again, this is
- *   to preserve the stack and LR.
+ * - Function can be called from systick_isr() or from the PIT timer (implemented
+ *   by IntervalTimer)
+ * - If using systick, we override the default systick_isr() in order
+ *   to preserve the stack and LR. If using PIT, we override the pitX_isr() for
+ *   the same reason.
  * - Since Systick can be called from within another interrupt, for simplicity, we 
  *   check for this and abort.
  * - Teensy uses MSP for it's main thread; we preserve that. Alternatively, we
@@ -34,6 +37,8 @@
  *   things can happen. This is especially true if usb_isr() is active. In theory
  *   we should be able to do a switch even within an interrupt, but in my
  *   tests, it would not work reliably.
+ * - If using the PIT interrupt, it's priority is set to 255 (the lowest) so it
+ *   cannot interrupt an interrupt.
  */
 
   .syntax unified
@@ -41,11 +46,24 @@
   .thumb
 
   .global context_switch_direct
+  .thumb_func
 context_switch_direct:
   CPSID I
+  // Call here to force a context switch, so we skip checking the tick counter.
   B call_direct
 
+  .global context_switch_pit_isr
+  .thumb_func
+context_switch_pit_isr:
+  CPSID I
+  LDR r0, =context_timer_flag   // acknowledge the interrupt by
+  LDR r0, [r0]                  // getting the pointer to the pointer
+  MOVS r1, #1                   //
+  STR r1, [r0]                  // and setting to 1
+  B context_switch_check        // now go do the context switch
+
   .global context_switch
+  .thumb_func
 context_switch:
 
   // Disable all interrupts; if we get interrupted during a context switch this
@@ -61,6 +79,8 @@ context_switch:
   CMP lr, #0xFFFFFFE1      // this means we interrupted an interrupt with FPU
   BEQ to_exit              // so don't do anything until next time
 
+context_switch_check:
+
   // Count down number of ticks we should stay in thread
   LDR r0, =currentCount    // get the tick count (address to variable)
   LDR r1, [r0]             // get the value from the address
@@ -70,8 +90,13 @@ context_switch:
   STR r1, [r0]             // and put it back
   B to_exit                // and quit until next context_switch
 
-  call_direct:
-  
+call_direct:
+
+  LDR r0, =currentActive
+  LDR r0, [r0]
+  CMP r0, #1
+  BNE to_exit
+
   // Save the r4-r11 registers; (r0-r3,r12 are saved by the interrupt handler).
   // Most thread libraries save this to the thread stack. I don't for simplicity
   // and to make debugging easier. Since the Teensy doesn't have a debugging port,

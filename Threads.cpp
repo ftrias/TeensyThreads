@@ -1,10 +1,13 @@
 /*
-  Threads.cpp - Library for threading on the Teensy.
-  Created by Fernando Trias, January 2017.
-  Copyright 2017 by Fernando Trias. All rights reserved.
+ * Threads.cpp - Library for threading on the Teensy.
+ * Created by Fernando Trias, January 2017.
+ * Copyright 2017 by Fernando Trias. All rights reserved.
 */
 #include "Threads.h"
 #include <Arduino.h>
+
+#include <IntervalTimer.h>
+IntervalTimer context_timer;
 
 Threads threads;
 
@@ -12,6 +15,7 @@ Threads threads;
 // They are copies or pointers to data in Threads and ThreadInfo
 // and put here seperately in order to simplify the code.
 extern "C" {
+  int currentUseSystick;
   int currentActive;
   int currentCount;
   ThreadInfo *currentThread;
@@ -23,16 +27,17 @@ extern "C" {
   }
 }
 
-Threads::Threads() : thread_active(FIRST_RUN), current_thread(0), thread_count(0), thread_error(0) {
+Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   // initialize context_switch() globals from thread 0, which is MSP and always running
   currentThread = thread;        // thread 0 is active
   currentSave = &thread[0].save;
   currentMSP = 1;
   currentSP = 0;
   currentCount = Threads::DEFAULT_TICKS;
-  currentActive = thread_active;
+  currentActive = FIRST_RUN;
   thread[0].flags = RUNNING;
   thread[0].ticks = DEFAULT_TICKS;
+  currentUseSystick = 1;
 }
 
 /*
@@ -40,9 +45,9 @@ Threads::Threads() : thread_active(FIRST_RUN), current_thread(0), thread_count(0
  */
 int Threads::start(int prev_state) {
   __asm volatile("CPSID I");
-  int old_state = thread_active;
+  int old_state = currentActive;
   if (prev_state == -1) prev_state = STARTED;
-  thread_active = prev_state;
+  currentActive = prev_state;
   __asm volatile("CPSIE I");  
   return old_state;
 }
@@ -55,8 +60,8 @@ int Threads::start(int prev_state) {
  */
 int Threads::stop() {
   __asm volatile("CPSID I");
-  int old_state = thread_active;
-  thread_active = STOPPED;
+  int old_state = currentActive;
+  currentActive = STOPPED;
   __asm volatile("CPSIE I");  
   return old_state; 
 }
@@ -83,7 +88,49 @@ void Threads::getNextThread() {
   currentMSP = (current_thread==0?1:0);
   currentSP = thread[current_thread].sp;
   currentCount = thread[current_thread].ticks;
-  currentActive = thread_active;
+}
+
+/*
+ * Empty placeholder for IntervalTimer class
+ */
+static void context_pit_empty() {}
+
+/*
+ * Store the PIT timer flag register for use in assembly
+ */
+volatile uint32_t *context_timer_flag;
+
+/*
+ * Defined in assembly code
+ */
+extern "C" void context_switch_pit_isr();
+
+/*
+ * Stop using the SysTick interrupt and start using
+ * the IntervalTimer timer. The parameter is the number of microseconds
+ * for each tick.
+ *
+ * Implementation suggested by @tni in Teensy Forums; see
+ * https://forum.pjrc.com/threads/41504-Teensy-3-x-multithreading-library-first-release
+ */
+int Threads::setMicroTimer(int tick_microseconds) {
+  // lowest priority so we don't interrupt other interrupts
+  context_timer.priority(255);
+  // start timer with dummy fuction
+  if (context_timer.begin(context_pit_empty, tick_microseconds) == 0) {
+    // failed to set the timer!
+    return 0;
+  }
+  currentUseSystick = 0; // disable Systick calls
+  // get the PIT number [0-3] (IntervalTimer overrides IRQ_NUMBER_t op)
+  int number = (IRQ_NUMBER_t)context_timer - IRQ_PIT_CH0;
+  // calculate number of uint32_t per PIT; should be 4.
+  // Not hard-coded in case this changes in future CPUs.
+  const int width = (PIT_TFLG1 - PIT_TFLG0) / 4; 
+  // get the right flag to ackowledge PIT interrupt
+  context_timer_flag = &PIT_TFLG0 + (width * number);
+  attachInterruptVector(context_timer, context_switch_pit_isr);
+  return 1;
 }
 
 /* 
@@ -92,13 +139,14 @@ void Threads::getNextThread() {
  * on the stack. This is so we can preserve the stack of the caller.
  *
  * Interrupts will save r0-r4 in the stack and since this function 
- * is short and simple, it should only use those registers.
+ * is short and simple, it should only use those registers. In the
+ * future, this should be coded in assembly to make sure.
  */
 extern volatile uint32_t systick_millis_count;
 void __attribute((naked)) systick_isr(void)
 {
   systick_millis_count++;
-  if (threads.thread_active == Threads::STARTED) { // switch only if active
+  if (currentUseSystick) {
     // we branch in order to preserve LR and the stack
     __asm volatile("b context_switch");
   }
@@ -107,9 +155,9 @@ void __attribute((naked)) systick_isr(void)
 
 void __attribute((naked)) svcall_isr(void)
 {
-  register int *rsp __asm("sp");
+  register unsigned int *rsp __asm("sp");
   int svc = ((uint8_t*)rsp[6])[-2];
-  if (svc == 0x21) {
+  if (svc == Threads::SVC_NUMBER) {
     __asm volatile("b context_switch_direct");
   }
   __asm volatile("bx lr");
@@ -196,7 +244,7 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
       thread[i].ticks = DEFAULT_TICKS;
       thread[i].flags = RUNNING;
       thread[i].save.lr = 0xFFFFFFF9;
-      thread_active = old_state;
+      currentActive = old_state;
       thread_count++;
       if (old_state == STARTED || old_state == FIRST_RUN) start();
       return i;
@@ -260,13 +308,13 @@ void Threads::setDefaultTimeSlice(unsigned int ticks)
   DEFAULT_TICKS = ticks - 1;
 }
 
-void Threads::setDefaultStackSize(unsigned int bytes)
+void Threads::setDefaultStackSize(unsigned int bytes_size)
 {
-  DEFAULT_STACK_SIZE = bytes;
+  DEFAULT_STACK_SIZE = bytes_size;
 }
 
 void Threads::yield() {
-  __asm volatile("svc 0x21");
+  __asm volatile("svc %0" : : "i"(Threads::SVC_NUMBER));
 }
 
 void Threads::delay(int millisecond) {
@@ -294,8 +342,8 @@ int Threads::getStackRemaining(int id) {
  */
 Threads::Lock::Lock() {
   __asm volatile("CPSID I");
-  save_state = threads.thread_active;
-  threads.thread_active = 0;
+  save_state = currentActive;
+  currentActive = 0;
   __asm volatile("CPSIE I");
 }
 
@@ -304,7 +352,7 @@ Threads::Lock::Lock() {
  */
 Threads::Lock::~Lock() {
   __asm volatile("CPSID I");  
-  threads.thread_active = save_state;
+  currentActive = save_state;
   __asm volatile("CPSIE I");
 }
 

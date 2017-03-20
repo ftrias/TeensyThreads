@@ -56,6 +56,7 @@
 extern "C" {
   void context_switch(void);
   void context_switch_direct(void);
+  void context_switch_pit_isr(void);
   void systick_isr(void);
   void loadNextThread();
 }
@@ -164,7 +165,8 @@ public:
   // the implementation. See notes of ThreadInfo.
   static const int MAX_THREADS = 8;
   int DEFAULT_STACK_SIZE = 1024;
-  int DEFAULT_TICKS = 100;
+  int DEFAULT_TICKS = 10;
+  static const int DEFAULT_TICK_MICROSECONDS = 100;
 
   // State of threading system
   static const int STARTED = 1;
@@ -178,8 +180,9 @@ public:
   static const int ENDING = 3;
   static const int SUSPENDED = 4;
 
+  static const int SVC_NUMBER = 0x21;
+
 protected:
-  int thread_active;
   int current_thread;
   int thread_count;
   int thread_error;
@@ -196,6 +199,8 @@ protected:
 
 public:
   Threads();
+
+  int setMicroTimer(int tick_microseconds = DEFAULT_TICK_MICROSECONDS);
 
   // Create a new thread for function "p", passing argument "arg". If stack is 0,
   // stack allocated on heap. Function "p" has form "void p(void *)".
@@ -227,7 +232,7 @@ public:
   // Set the slice length time in ticks for all new threads (1 tick = 1 millisecond)
   void setDefaultTimeSlice(unsigned int ticks);
   // Set the stack size for new threads in bytes
-  void setDefaultStackSize(unsigned int bytes);
+  void setDefaultStackSize(unsigned int bytes_size);
 
   // Get the id of the currently running thread
   int id();
@@ -249,6 +254,7 @@ public:
   // Allow these static functions and classes to access our members
   friend void context_switch(void); 
   friend void context_switch_direct(void); 
+  friend void context_pit_isr(void);
   friend void systick_isr(void);
   friend void loadNextThread();
   friend class ThreadLock;
