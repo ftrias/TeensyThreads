@@ -1,4 +1,4 @@
-#include <Threads.h>
+#include <TeensyThreads.h>
 
 volatile long int count = 0;
 

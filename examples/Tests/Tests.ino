@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-#include "Threads.h"
+#include "TeensyThreads.h"
 
 volatile int p1 = 0;
 volatile int p2 = 0;

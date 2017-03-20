@@ -9,7 +9,7 @@ Simple example
 ------------------------------
 
 ```C++
-#include <Threads.h>
+#include <TeensyThreads.h>
 volatile int count = 0;
 void thread_func(int data){
   while(1) count += data;
@@ -25,7 +25,7 @@ void loop() {
 Or using std::thread
 
 ```C++
-#include <Threads.h>
+#include <TeensyThreads.h>
 volatile int count = 0;
 void thread_func(int data){
   while(1) count += data;
@@ -270,6 +270,7 @@ Revision 2: March 2017
 1. Change default time slice to 10 milliseconds
 2. Add setDefaultTimeSlice(), setDefaultStackSize().
 3. Support slices smaller than 1 ms using IntervalTimer; see setMicroTimer().
+4. Rename to use TeensyThreads.h to avoid conflicts
 
 Other
 -----------------------------

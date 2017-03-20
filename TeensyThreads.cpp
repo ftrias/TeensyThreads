@@ -3,7 +3,7 @@
  * Created by Fernando Trias, January 2017.
  * Copyright 2017 by Fernando Trias. All rights reserved.
 */
-#include "Threads.h"
+#include "TeensyThreads.h"
 #include <Arduino.h>
 
 #include <IntervalTimer.h>
