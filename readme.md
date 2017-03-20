@@ -95,8 +95,16 @@ class Threads {
   int suspend(int id);
   // Restart a suspended thread.
   int restart(int id);
-  // Set the slice length in ticks (1 tick = 1 millisecond)
+  
+  // Set the slice length time in ticks for a thread (1 tick = 1 millisecond, unless using MicroTimer)
   void setTimeSlice(int id, unsigned int ticks);
+  // Set the slice length time in ticks for all new threads (1 tick = 1 millisecond, unless using MicroTimer)
+  void setDefaultTimeSlice(unsigned int ticks);
+  // Set the stack size for new threads in bytes
+  void setDefaultStackSize(unsigned int bytes_size);
+  // use the microsecond timer provided by IntervalTimer & PIT; instead of 1 tick = 1 millisecond,
+  // 1 tick will be the number of microseconds provided (default is 100 microseconds)
+  int setMicroTimer(int tick_microseconds = DEFAULT_TICK_MICROSECONDS);
 
   // Yield current thread's remaining time slice to the next thread, causing
   // immedidate context switch

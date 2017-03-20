@@ -200,8 +200,6 @@ protected:
 public:
   Threads();
 
-  int setMicroTimer(int tick_microseconds = DEFAULT_TICK_MICROSECONDS);
-
   // Create a new thread for function "p", passing argument "arg". If stack is 0,
   // stack allocated on heap. Function "p" has form "void p(void *)".
   int addThread(ThreadFunction p, void * arg=0, int stack_size=-1, void *stack=0);
@@ -227,12 +225,16 @@ public:
   int suspend(int id);
   // Restart a suspended thread.
   int restart(int id);
-  // Set the slice length time in ticks for a thread (1 tick = 1 millisecond)
+  // Set the slice length time in ticks for a thread (1 tick = 1 millisecond, unless using MicroTimer)
   void setTimeSlice(int id, unsigned int ticks);
-  // Set the slice length time in ticks for all new threads (1 tick = 1 millisecond)
+  // Set the slice length time in ticks for all new threads (1 tick = 1 millisecond, unless using MicroTimer)
   void setDefaultTimeSlice(unsigned int ticks);
   // Set the stack size for new threads in bytes
   void setDefaultStackSize(unsigned int bytes_size);
+  // use the microsecond timer provided by IntervalTimer & PIT; instead of 1 tick = 1 millisecond,
+  // 1 tick will be the number of microseconds provided (default is 100 microseconds)
+  int setMicroTimer(int tick_microseconds = DEFAULT_TICK_MICROSECONDS);
+
 
   // Get the id of the currently running thread
   int id();
