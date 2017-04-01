@@ -74,20 +74,39 @@ int Threads::stop() {
 void Threads::getNextThread() {
   // First, save the currentSP set by context_switch
   thread[current_thread].sp = currentSP;
-  // Find the next running thread
-  do {
-    current_thread++;
-    if (current_thread >= MAX_THREADS) {
-      current_thread = 0; // thread 0 is MSP; always active so return
-      break;
+
+  // Find any priority threads
+  int priority_thread = -1;
+  for(int i=0; i < MAX_THREADS; i++) {
+    if (thread[current_thread].flags == RUNNING) {
+      if (thread[i].priority) {
+        current_thread = i;
+        priority_thread = i;
+        currentCount = thread[i].priority;
+        thread[i].priority = 0;
+        break;
+      }
     }
   }
-  while (thread[current_thread].flags != RUNNING);
+
+  // If no priority threads, find next active one
+  if (priority_thread == -1) {
+    // Find the next running thread
+    while(1) {
+      current_thread++;
+      if (current_thread >= MAX_THREADS) {
+        current_thread = 0; // thread 0 is MSP; always active so return
+        break;
+      }
+      if (thread[current_thread].flags == RUNNING) break;
+    }
+    currentCount = thread[current_thread].ticks;
+  }
+
   currentThread = &thread[current_thread];
   currentSave = &thread[current_thread].save;
   currentMSP = (current_thread==0?1:0);
   currentSP = thread[current_thread].sp;
-  currentCount = thread[current_thread].ticks;
 }
 
 /*
@@ -113,7 +132,8 @@ extern "C" void context_switch_pit_isr();
  * Implementation suggested by @tni in Teensy Forums; see
  * https://forum.pjrc.com/threads/41504-Teensy-3-x-multithreading-library-first-release
  */
-int Threads::setMicroTimer(int tick_microseconds) {
+int Threads::setMicroTimer(int tick_microseconds) 
+{
   // lowest priority so we don't interrupt other interrupts
   context_timer.priority(255);
   // start timer with dummy fuction
@@ -130,6 +150,32 @@ int Threads::setMicroTimer(int tick_microseconds) {
   // get the right flag to ackowledge PIT interrupt
   context_timer_flag = &PIT_TFLG0 + (width * number);
   attachInterruptVector(context_timer, context_switch_pit_isr);
+  return 1;
+}
+
+/*
+ * Set each time slice to be 'microseconds' long
+ */
+int Threads::setSliceMicros(int microseconds) 
+{
+  setMicroTimer(microseconds);
+  setDefaultTimeSlice(1);
+  return 1;
+}
+
+/*
+ * Set each time slice to be 'milliseconds' long
+ */
+int Threads::setSliceMillis(int milliseconds) 
+{
+  if (currentUseSystick) {
+    setDefaultTimeSlice(milliseconds);
+  }
+  else {
+    // if we're using the PIT, we should probably really disable it and
+    // re-establish the systick timer; but this is easier for now
+    setSliceMicros(milliseconds * 1000);
+  }
   return 1;
 }
 
@@ -170,7 +216,8 @@ void __attribute((naked)) svcall_isr(void)
  * context_switch() at which point it all stops. The while(1) statement
  * just stalls until such time.
  */
-void Threads::del_process(void){
+void Threads::del_process(void)
+{
   int old_state = threads.stop();
   ThreadInfo *me = &threads.thread[threads.current_thread];
   // Would love to delete stack here but the thread doesn't
@@ -308,6 +355,12 @@ void Threads::setDefaultTimeSlice(unsigned int ticks)
   DEFAULT_TICKS = ticks - 1;
 }
 
+void Threads::setPriority(int id, int level)
+{
+  if (id == -1) id = current_thread;
+  thread[id].priority = level;
+}
+
 void Threads::setDefaultStackSize(unsigned int bytes_size)
 {
   DEFAULT_STACK_SIZE = bytes_size;
@@ -340,7 +393,7 @@ int Threads::getStackRemaining(int id) {
 /*
  * On creation, stop threading and save state
  */
-Threads::Lock::Lock() {
+Threads::Suspend::Suspend() {
   __asm volatile("CPSID I");
   save_state = currentActive;
   currentActive = 0;
@@ -350,7 +403,7 @@ Threads::Lock::Lock() {
 /*
  * On destruction, restore threading state
  */
-Threads::Lock::~Lock() {
+Threads::Suspend::~Suspend() {
   __asm volatile("CPSID I");  
   currentActive = save_state;
   __asm volatile("CPSIE I");
@@ -370,6 +423,11 @@ int Threads::Mutex::lock(unsigned int timeout_ms) {
     p = try_lock();
     if (p) return 1;
     if (timeout_ms && (systick_millis_count - start > timeout_ms)) return 0;
+    if (waitthread==-1) { // can hold 1 thread is suspend until unlock
+      waitthread = threads.current_thread;
+      waitcount = currentCount;
+      threads.suspend(waitthread);
+    }
     threads.yield();
   }
   return 0;
@@ -388,7 +446,14 @@ int Threads::Mutex::try_lock() {
 
 int Threads::Mutex::unlock() {
   int p = threads.stop();
-  state = 0;
+  if (state==1) {
+    if (waitthread >= 0) {
+      threads.setPriority(waitthread, waitcount);
+      threads.restart(waitthread);
+      waitthread = -1;
+    }
+    state = 0;
+  }
   threads.start(p);
   return 1;
 }

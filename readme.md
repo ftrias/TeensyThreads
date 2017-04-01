@@ -95,16 +95,11 @@ class Threads {
   int suspend(int id);
   // Restart a suspended thread.
   int restart(int id);
-  
-  // Set the slice length time in ticks for a thread (1 tick = 1 millisecond, unless using MicroTimer)
-  void setTimeSlice(int id, unsigned int ticks);
-  // Set the slice length time in ticks for all new threads (1 tick = 1 millisecond, unless using MicroTimer)
-  void setDefaultTimeSlice(unsigned int ticks);
-  // Set the stack size for new threads in bytes
-  void setDefaultStackSize(unsigned int bytes_size);
-  // use the microsecond timer provided by IntervalTimer & PIT; instead of 1 tick = 1 millisecond,
-  // 1 tick will be the number of microseconds provided (default is 100 microseconds)
-  int setMicroTimer(int tick_microseconds = DEFAULT_TICK_MICROSECONDS);
+
+  // Simple function to set each time slice to be 'milliseconds' long
+  int setSliceMillis(int milliseconds);
+  // Set each time slice to be 'microseconds' long
+  int setSliceMicros(int microseconds);
 
   // Yield current thread's remaining time slice to the next thread, causing
   // immedidate context switch
@@ -117,6 +112,17 @@ class Threads {
   int start(int new_state = -1);
   // Stop threading system; returns previous state: STARTED, STOPPED, FIRST_RUN        
   int stop();
+
+  /* Advanced functions: */
+  // Set the stack size for new threads in bytes
+  void setDefaultStackSize(unsigned int bytes_size);
+  // Set the slice length time in ticks for a thread (1 tick = 1 millisecond, unless using MicroTimer)
+  void setTimeSlice(int id, unsigned int ticks);
+  // Set the slice length time in ticks for all new threads (1 tick = 1 millisecond, unless using MicroTimer)
+  void setDefaultTimeSlice(unsigned int ticks);
+  // use the microsecond timer provided by IntervalTimer & PIT; instead of 1 tick = 1 millisecond,
+  // 1 tick will be the number of microseconds provided (default is 100 microseconds)
+  int setMicroTimer(int tick_microseconds = DEFAULT_TICK_MICROSECONDS);
 };
 ```
 
@@ -167,6 +173,50 @@ In the code above, seeing that `state` is not changed in the loop, the
 optimizer will convert the `while (state<100)` into an `if` statement. Adding
 `volatile` to the declaration of `int state` will usually help (as in
 `volatile int state`).
+
+Locking
+-----------------------------
+
+Because the Teensy libraries are not usually thread-safe, it's best to 
+only use one library in one thread. For example, if using the Wire library,
+it should always be used in a single thread. If this cannot be avoided, then all
+uses should be surrounded by locks.
+
+For example:
+
+```
+  Threads::Mutex wire_lock;
+
+  void init()
+  {
+    Threads::Scope scope(wire_lock);
+    Wire.beginTransmission(17); 
+    Wire.write(0x1F); 
+    Wire.write(0x31); 
+    Wire.endTransmission();
+  }
+```
+
+For more widely used libraries like Serial, adding locks may require
+vast changes to the code. Because of this, the library provides a helper class
+and set of macros to encapsulate all method calls with a lock. An example
+illustrates its use:
+
+```
+ThreadWrap(Serial, SerialX);
+#define Serial ThreadClone(SerialX)
+
+int thread_func()
+{
+    Serial.println("begin");
+}
+```
+
+In the code above, every time `Serial` is used, it will first lock a mutex,
+then call the desired method, then unlock the mutex. This shortcut will only
+work on all the code located below the `#define` line. More information 
+about the mechanics can be found by looking at the source code.
+
 
 Alternative std::thread interface
 -----------------------------
@@ -274,11 +324,17 @@ Todo
 Changes
 -----------------------------
 
-Revision 2: March 2017
+Revision 0.2: March 2017
 1. Change default time slice to 10 milliseconds
 2. Add setDefaultTimeSlice(), setDefaultStackSize().
 3. Support slices smaller than 1 ms using IntervalTimer; see setMicroTimer().
 4. Rename to use TeensyThreads.h to avoid conflicts
+
+Revision 0.3: April 2017
+1. Rename Threads::Lock to Threads::Suspend
+2. Add setSliceMicros() and setSliceMillis()
+3. "lock" will suspend blocking thread until "unlock" and then give thread priority
+4. Add ThreadWrap macro and supporting classes
 
 Other
 -----------------------------

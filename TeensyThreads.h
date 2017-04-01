@@ -147,6 +147,7 @@ class ThreadInfo {
     int my_stack = 0;
     software_stack_t save;
     int flags = 0;
+    int priority = 0;
     void *sp;
     int ticks;
 };
@@ -231,15 +232,22 @@ public:
   void setDefaultTimeSlice(unsigned int ticks);
   // Set the stack size for new threads in bytes
   void setDefaultStackSize(unsigned int bytes_size);
-  // use the microsecond timer provided by IntervalTimer & PIT; instead of 1 tick = 1 millisecond,
+  // Use the microsecond timer provided by IntervalTimer & PIT; instead of 1 tick = 1 millisecond,
   // 1 tick will be the number of microseconds provided (default is 100 microseconds)
   int setMicroTimer(int tick_microseconds = DEFAULT_TICK_MICROSECONDS);
-
+  // Simple function to set each time slice to be 'milliseconds' long
+  int setSliceMillis(int milliseconds);
+  // Set each time slice to be 'microseconds' long
+  int setSliceMicros(int microseconds);
 
   // Get the id of the currently running thread
   int id();
   int getStackUsed(int id);
   int getStackRemaining(int id);
+
+  // Give a thread running priority so that it will run on the next context switch for
+  // 'ticks' number of slices; used internally by locking mechanism
+  void setPriority(int id, int ticks);
 
   // Yield current thread's remaining time slice to the next thread, causing immediate
   // context switch
@@ -273,6 +281,8 @@ public:
   class Mutex {
   private:
     volatile int state = 0;
+    volatile int waitthread = -1;
+    volatile int waitcount = 0;
   public:
     int getState(); // get the lock state; 1=locked; 0=unlocked
     int lock(unsigned int timeout_ms = 0); // lock, optionally waiting up to timeout_ms milliseconds
@@ -281,21 +291,48 @@ public:
   };
 
   class Scope {
-    private:
-      Mutex *r;
-    public:
-      Scope(Mutex& m) { r = &m; r->lock(); }
-      ~Scope() { r->unlock(); }
+  private:
+    Mutex *r;
+  public:
+    Scope(Mutex& m) { r = &m; r->lock(); }
+    ~Scope() { r->unlock(); }
   };
 
-  class Lock {
+  class Suspend {
   private:
     int save_state;
   public:
-    Lock();      // Stop threads and save thread state
-    ~Lock();     // Restore saved state
+    Suspend();      // Stop threads and save thread state
+    ~Suspend();     // Restore saved state
   };
+
+  template <class C> class GrabTemp {
+    private:
+      Mutex *lkp;
+    public:
+      C *me;
+      GrabTemp(C *obj, Mutex *lk) { me = obj; lkp=lk; lkp->lock(); }
+      ~GrabTemp() { lkp->unlock(); }
+      C &get() { return *me; }
+  };
+
+  template <class T> class Grab {
+    private:
+      Mutex lk;
+      T *me;
+    public:
+      Grab(T &t) { me = &t; }
+      GrabTemp<T> grab() { return GrabTemp<T>(me, &lk); }
+      operator T&() { return grab().get(); }
+      T *operator->() { return grab().me; }
+      Mutex &getLock() { return lk; }
+  };
+
+#define ThreadWrap(OLDOBJ, NEWOBJ) Threads::Grab<typeof(OLDOBJ)> NEWOBJ(OLDOBJ);
+#define ThreadClone(NEWOBJ) (NEWOBJ.grab().get())
+
 };
+
 
 extern Threads threads;
 

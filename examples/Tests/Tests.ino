@@ -5,6 +5,7 @@
 volatile int p1 = 0;
 volatile int p2 = 0;
 volatile int p3 = 0;
+volatile int p4 = 0;
 
 void my_priv_func1(int data){
   p1 = 0;
@@ -26,6 +27,15 @@ void my_priv_func3() {
   while(1) p3++;
 }
 
+void my_priv_func_lock(void *lock) {
+  Threads::Mutex *m = (Threads::Mutex *) lock;
+  p4 = 0;
+  m->lock();
+  uint32_t mx = millis();
+  while(millis() - mx < 500) p1++;
+  m->unlock();
+}
+
 void showp() {
   Serial.print(p1);
   Serial.print(" ");
@@ -37,7 +47,29 @@ void showp() {
 
 int id1, id2, id3;
 
+void delay2(uint32_t ms)
+{
+  int mx = millis();
+  while(millis() - mx < ms);
+}
+
 #define delayx delay
+
+
+class subtest {
+public:
+int value;
+void h(int x) { value = x; }
+int test(Threads::Mutex *lk) { return lk->getState(); }
+int getValue() { return value; }
+} subinst;
+
+class WireTest {
+public:
+bool beginTransaction() { return 1; }
+bool endTransaction() { return 1; }
+bool other() { return 1; }
+};
 
 void runtest() {
   int save_p;
@@ -189,6 +221,71 @@ void runtest() {
   delayx(500);
   if (p3 != 0 && p3 == save_p) Serial.println("OK"); 
   else Serial.println("***FAIL***");
+
+  Serial.print("Test basic lock ");
+  id1 = threads.addThread(my_priv_func1, 2);
+  delayx(500);
+  {
+    Threads::Suspend lock;
+    save_p = p1;
+    delayx(500);
+    if (save_p == p1) Serial.println("OK"); 
+    else Serial.println("***FAIL***");
+  }
+
+  Serial.print("Test basic unlock ");
+  delayx(500);
+  if (save_p != p1) Serial.println("OK"); 
+  else Serial.println("***FAIL***");
+
+
+  Serial.print("Test mutex lock state ");
+  Threads::Mutex mx;
+  mx.lock();
+  r = mx.try_lock();
+  if (r == 0) Serial.println("OK"); 
+  else Serial.println("***FAIL***");
+
+  Serial.print("Test mutex lock thread ");
+  id1 = threads.addThread(my_priv_func_lock, &mx);
+  delayx(200);
+  if (p4 == 0) Serial.println("OK"); 
+  else Serial.println("***FAIL***");
+
+  Serial.print("Test mutex unlock ");
+  mx.unlock();
+  delayx(500);
+  if (p1 != 0) Serial.println("OK"); 
+  else Serial.println("***FAIL***");
+
+  Serial.print("Test std::mutex lock ");
+  std::mutex g_mutex;
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_mutex.try_lock() == 0) Serial.println("OK"); 
+    else Serial.println("***FAIL***");
+  }
+
+  Serial.print("Test std::mutex unlock ");
+  if (g_mutex.try_lock() == 1) Serial.println("OK"); 
+  else Serial.println("***FAIL***");
+  g_mutex.unlock();
+  
+  Serial.print("Test Grab init ");
+  subinst.h(10);
+  ThreadWrap(subinst, sub2);
+  #define subinst ThreadClone(sub2)
+  if(subinst.getValue() == 10) Serial.println("OK");
+  else Serial.println("***FAIL***");
+
+  Serial.print("Test Grab set ");
+  subinst.h(25);
+  if(subinst.getValue() == 25) Serial.println("OK");
+  else Serial.println("***FAIL***");
+
+  Serial.print("Test Grab lock ");
+  if (subinst.test(&(sub2.getLock())) == 1) Serial.println("OK");
+  else Serial.println("***FAIL***");
 }
 
 void runloop() {
@@ -200,13 +297,11 @@ void runloop() {
     Serial.print(": ");
     Serial.print((millis() - timeloop)/1000);
     Serial.print(" sec ");
-    Serial.print(p2);
-    Serial.println();
+    showp();
     count++;
     mx = millis();
   }
 }
-
 
 void setup() {
   delay(1000);
