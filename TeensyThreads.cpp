@@ -48,7 +48,7 @@ int Threads::start(int prev_state) {
   int old_state = currentActive;
   if (prev_state == -1) prev_state = STARTED;
   currentActive = prev_state;
-  __asm volatile("CPSIE I");  
+  __asm volatile("CPSIE I");
   return old_state;
 }
 
@@ -62,8 +62,8 @@ int Threads::stop() {
   __asm volatile("CPSID I");
   int old_state = currentActive;
   currentActive = STOPPED;
-  __asm volatile("CPSIE I");  
-  return old_state; 
+  __asm volatile("CPSIE I");
+  return old_state;
 }
 
 /*
@@ -82,7 +82,7 @@ void Threads::getNextThread() {
       if (thread[i].priority) {
         current_thread = i;
         priority_thread = i;
-        currentCount = thread[i].priority;
+        currentCount = thread[i].ticks; // .priority
         thread[i].priority = 0;
         break;
       }
@@ -129,10 +129,10 @@ extern "C" void context_switch_pit_isr();
  * the IntervalTimer timer. The parameter is the number of microseconds
  * for each tick.
  *
- * Implementation suggested by @tni in Teensy Forums; see
+ * Implementation strategy suggested by @tni in Teensy Forums; see
  * https://forum.pjrc.com/threads/41504-Teensy-3-x-multithreading-library-first-release
  */
-int Threads::setMicroTimer(int tick_microseconds) 
+int Threads::setMicroTimer(int tick_microseconds)
 {
   // lowest priority so we don't interrupt other interrupts
   context_timer.priority(255);
@@ -146,7 +146,7 @@ int Threads::setMicroTimer(int tick_microseconds)
   int number = (IRQ_NUMBER_t)context_timer - IRQ_PIT_CH0;
   // calculate number of uint32_t per PIT; should be 4.
   // Not hard-coded in case this changes in future CPUs.
-  const int width = (PIT_TFLG1 - PIT_TFLG0) / 4; 
+  const int width = (PIT_TFLG1 - PIT_TFLG0) / 4;
   // get the right flag to ackowledge PIT interrupt
   context_timer_flag = &PIT_TFLG0 + (width * number);
   attachInterruptVector(context_timer, context_switch_pit_isr);
@@ -156,7 +156,7 @@ int Threads::setMicroTimer(int tick_microseconds)
 /*
  * Set each time slice to be 'microseconds' long
  */
-int Threads::setSliceMicros(int microseconds) 
+int Threads::setSliceMicros(int microseconds)
 {
   setMicroTimer(microseconds);
   setDefaultTimeSlice(1);
@@ -166,7 +166,7 @@ int Threads::setSliceMicros(int microseconds)
 /*
  * Set each time slice to be 'milliseconds' long
  */
-int Threads::setSliceMillis(int milliseconds) 
+int Threads::setSliceMillis(int milliseconds)
 {
   if (currentUseSystick) {
     setDefaultTimeSlice(milliseconds);
@@ -179,12 +179,12 @@ int Threads::setSliceMillis(int milliseconds)
   return 1;
 }
 
-/* 
+/*
  * Replace the SysTick interrupt for our context switching. Note that
  * this function is "naked" meaning it does not save it's registers
  * on the stack. This is so we can preserve the stack of the caller.
  *
- * Interrupts will save r0-r4 in the stack and since this function 
+ * Interrupts will save r0-r4 in the stack and since this function
  * is short and simple, it should only use those registers. In the
  * future, this should be coded in assembly to make sure.
  */
@@ -201,10 +201,21 @@ void __attribute((naked)) systick_isr(void)
 
 void __attribute((naked)) svcall_isr(void)
 {
-  register unsigned int *rsp __asm("sp");
-  int svc = ((uint8_t*)rsp[6])[-2];
+  __asm volatile("TST lr, #4 \n");
+  __asm volatile("BEQ is_msp \n");
+  __asm volatile("MRS r0, PSP \n");
+  __asm volatile("B is_done \n");
+  __asm volatile("is_msp: \n");
+  __asm volatile("MRS r0, MSP \n");
+  __asm volatile("is_done: \n");
+  register unsigned int *rsp __asm("r0");
+  unsigned int svc = ((uint8_t*)rsp[6])[-2];
   if (svc == Threads::SVC_NUMBER) {
     __asm volatile("b context_switch_direct");
+  }
+  else if (svc == Threads::SVC_NUMBER_ACTIVE) {
+    currentActive = Threads::STARTED;
+    __asm volatile("b context_switch_direct_active");
   }
   __asm volatile("bx lr");
 }
@@ -291,6 +302,7 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
       thread[i].ticks = DEFAULT_TICKS;
       thread[i].flags = RUNNING;
       thread[i].save.lr = 0xFFFFFFF9;
+      thread[i].priority = 0;
       currentActive = old_state;
       thread_count++;
       if (old_state == STARTED || old_state == FIRST_RUN) start();
@@ -317,7 +329,7 @@ int Threads::wait(int id, unsigned int timeout_ms)
   unsigned int start = millis();
   // need to store state in temp volatile memory for optimizer.
   // "while (thread[id].flags != RUNNING)" will be optimized away
-  volatile int state; 
+  volatile int state;
   while (1) {
     if (timeout_ms != 0 && millis() - start > timeout_ms) return -1;
     state = thread[id].flags;
@@ -370,6 +382,10 @@ void Threads::yield() {
   __asm volatile("svc %0" : : "i"(Threads::SVC_NUMBER));
 }
 
+void Threads::yield_and_start() {
+  __asm volatile("svc %0" : : "i"(Threads::SVC_NUMBER_ACTIVE));
+}
+
 void Threads::delay(int millisecond) {
   int mx = millis();
   while((int)millis() - mx < millisecond) yield();
@@ -404,7 +420,7 @@ Threads::Suspend::Suspend() {
  * On destruction, restore threading state
  */
 Threads::Suspend::~Suspend() {
-  __asm volatile("CPSID I");  
+  __asm volatile("CPSID I");
   currentActive = save_state;
   __asm volatile("CPSIE I");
 }
@@ -447,12 +463,14 @@ int Threads::Mutex::try_lock() {
 int Threads::Mutex::unlock() {
   int p = threads.stop();
   if (state==1) {
+    state = 0;
     if (waitthread >= 0) {
       threads.setPriority(waitthread, waitcount);
       threads.restart(waitthread);
       waitthread = -1;
+      threads.yield_and_start();
+      return 1;
     }
-    state = 0;
   }
   threads.start(p);
   return 1;

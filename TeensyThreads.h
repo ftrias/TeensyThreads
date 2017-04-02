@@ -61,7 +61,7 @@ extern "C" {
   void loadNextThread();
 }
 
-/* 
+/*
  * ThreadLock is a simple function for starting/stopping
  * threading during critical sections by using scope. It stops threading
  * on creation and then restarts it on destruction when it goes
@@ -90,7 +90,7 @@ typedef struct {
   uint32_t pc;
   uint32_t xpsr;
 } interrupt_stack_t;
- 
+
 // The stack frame saves by the context switch
 typedef struct {
   uint32_t r4;
@@ -182,15 +182,16 @@ public:
   static const int SUSPENDED = 4;
 
   static const int SVC_NUMBER = 0x21;
+  static const int SVC_NUMBER_ACTIVE = 0x22;
 
 protected:
   int current_thread;
   int thread_count;
   int thread_error;
 
-  /* 
+  /*
    * The maximum number of threads is hard-coded. Alternatively, we could implement
-   * a linked list which would mean using up less memory for a small number of 
+   * a linked list which would mean using up less memory for a small number of
    * threads while allowing an unlimited number of possible threads. This would
    * probably not slow down thread switching too much, but it would introduce
    * complexity and possibly bugs. So to simplifiy for now, we use an array.
@@ -258,12 +259,12 @@ public:
   // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
   // can pass the previous state to restore
   int start(int old_state = -1);
-  // Stop threading system; returns previous state: STARTED, STOPPED, FIRST_RUN        
+  // Stop threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
   int stop();
 
   // Allow these static functions and classes to access our members
-  friend void context_switch(void); 
-  friend void context_switch_direct(void); 
+  friend void context_switch(void);
+  friend void context_switch_direct(void);
   friend void context_pit_isr(void);
   friend void systick_isr(void);
   friend void loadNextThread();
@@ -276,6 +277,7 @@ protected:
 
 private:
   static void del_process(void);
+  void yield_and_start();
 
 public:
   class Mutex {
@@ -336,13 +338,13 @@ public:
 
 extern Threads threads;
 
-/* 
+/*
  * Rudimentary compliance to C++11 class
- * 
+ *
  * See http://www.cplusplus.com/reference/thread/thread/
  *
- * Example:   
- * int x; 
+ * Example:
+ * int x;
  * void thread_func() { x++; }
  * int main() {
  *   std::thread(thread_func);
