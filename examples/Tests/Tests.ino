@@ -36,6 +36,26 @@ void my_priv_func_lock(void *lock) {
   m->unlock();
 }
 
+Threads::Mutex count_lock;
+int count1 = 0;
+int count2 = 0;
+int count3 = 0;
+
+void lock_test1() {
+  Threads::Scope s(count_lock);
+  count1++;
+}
+
+void lock_test2() {
+  Threads::Scope s(count_lock);
+  count2++;
+}
+
+void lock_test3() {
+  Threads::Scope s(count_lock);
+  count3++;
+}
+
 void showp() {
   Serial.print(p1);
   Serial.print(" ");
@@ -219,7 +239,7 @@ void runtest() {
   delayx(500);
   save_p = p3;
   delayx(500);
-  if (p3 != 0 && p3 == save_p) Serial.println("OK"); 
+  if (p3 != 0 && p3 == save_p) Serial.println("OK");
   else Serial.println("***FAIL***");
 
   Serial.print("Test basic lock ");
@@ -229,13 +249,13 @@ void runtest() {
     Threads::Suspend lock;
     save_p = p1;
     delayx(500);
-    if (save_p == p1) Serial.println("OK"); 
+    if (save_p == p1) Serial.println("OK");
     else Serial.println("***FAIL***");
   }
 
   Serial.print("Test basic unlock ");
   delayx(500);
-  if (save_p != p1) Serial.println("OK"); 
+  if (save_p != p1) Serial.println("OK");
   else Serial.println("***FAIL***");
 
 
@@ -243,34 +263,53 @@ void runtest() {
   Threads::Mutex mx;
   mx.lock();
   r = mx.try_lock();
-  if (r == 0) Serial.println("OK"); 
+  if (r == 0) Serial.println("OK");
   else Serial.println("***FAIL***");
 
   Serial.print("Test mutex lock thread ");
   id1 = threads.addThread(my_priv_func_lock, &mx);
   delayx(200);
-  if (p4 == 0) Serial.println("OK"); 
+  if (p4 == 0) Serial.println("OK");
   else Serial.println("***FAIL***");
 
   Serial.print("Test mutex unlock ");
   mx.unlock();
   delayx(500);
-  if (p1 != 0) Serial.println("OK"); 
+  if (p1 != 0) Serial.println("OK");
   else Serial.println("***FAIL***");
+
+  Serial.print("Test fast locks ");
+  id1 = threads.addThread(lock_test1);
+  id2 = threads.addThread(lock_test2);
+  id3 = threads.addThread(lock_test3);
+  delayx(1000);
+  threads.kill(id1);
+  threads.kill(id2);
+  threads.kill(id3);
+  if (count1 - count2 > 1000 || count2 - count1 > 1000) Serial.println("***FAIL***");
+  else if (count1 - count3 > 1000 || count3 - count1 > 1000) Serial.println("***FAIL***");
+  else Serial.println("OK");
+
+  Serial.print(count1);
+  Serial.print(" ");
+  Serial.print(count2);
+  Serial.print(" ");
+  Serial.print(count3);
+  Serial.println();
 
   Serial.print("Test std::mutex lock ");
   std::mutex g_mutex;
   {
     std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_mutex.try_lock() == 0) Serial.println("OK"); 
+    if (g_mutex.try_lock() == 0) Serial.println("OK");
     else Serial.println("***FAIL***");
   }
 
   Serial.print("Test std::mutex unlock ");
-  if (g_mutex.try_lock() == 1) Serial.println("OK"); 
+  if (g_mutex.try_lock() == 1) Serial.println("OK");
   else Serial.println("***FAIL***");
   g_mutex.unlock();
-  
+
   Serial.print("Test Grab init ");
   subinst.h(10);
   ThreadWrap(subinst, sub2);
