@@ -13,13 +13,13 @@
  * 7. Switch MSP/PSP on return
  *
  * Notes:
- * - Cortex-M has two stack pointers, MSP and PSP, which we alternate. See the 
+ * - Cortex-M has two stack pointers, MSP and PSP, which we alternate. See the
  *   reference manual under the Exception Model section.
  * - I tried coding this in asm embedded in Threads.cpp but the compiler
  *   optimizations kept changing my code and removing lines so I have to use
  *   a separate assembly file. But if you try it, make sure to declare the
  *   function "naked" so the stack pointer SP is not modified when called.
- *   This means you can't use local variables, which are stored in stack. 
+ *   This means you can't use local variables, which are stored in stack.
  *   Try to turn optimizations off using optimize("O0") (which doesn't really
  *   turn off all optimizations).
  * - Function can be called from systick_isr() or from the PIT timer (implemented
@@ -27,7 +27,7 @@
  * - If using systick, we override the default systick_isr() in order
  *   to preserve the stack and LR. If using PIT, we override the pitX_isr() for
  *   the same reason.
- * - Since Systick can be called from within another interrupt, for simplicity, we 
+ * - Since Systick can be called from within another interrupt, for simplicity, we
  *   check for this and abort.
  * - Teensy uses MSP for it's main thread; we preserve that. Alternatively, we
  *   could have used PSP for all threads, including main, and reserve MSP for
@@ -51,6 +51,13 @@ context_switch_direct:
   CPSID I
   // Call here to force a context switch, so we skip checking the tick counter.
   B call_direct
+
+  .global context_switch_direct_active
+  .thumb_func
+context_switch_direct_active:
+  CPSID I
+  // Call here to force a context switch, so we skip checking the tick counter.
+  B call_direct_active
 
   .global context_switch_pit_isr
   .thumb_func
@@ -96,6 +103,8 @@ call_direct:
   LDR r0, [r0]
   CMP r0, #1
   BNE to_exit
+
+call_direct_active:
 
   // Save the r4-r11 registers; (r0-r3,r12 are saved by the interrupt handler).
   // Most thread libraries save this to the thread stack. I don't for simplicity
