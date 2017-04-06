@@ -37,24 +37,41 @@ void my_priv_func_lock(void *lock) {
 }
 
 Threads::Mutex count_lock;
-int count1 = 0;
-int count2 = 0;
-int count3 = 0;
+volatile int count1 = 0;
+volatile int count2 = 0;
+volatile int count3 = 0;
 
 void lock_test1() {
-  Threads::Scope s(count_lock);
-  count1++;
+  while(1) {
+    count_lock.lock();
+    for(int i=0; i<500; i++) count1++;
+    count_lock.unlock();
+  }
 }
 
 void lock_test2() {
-  Threads::Scope s(count_lock);
-  count2++;
+  while(1) {
+    count_lock.lock();
+    for(int i=0; i<1000; i++) count2++;
+    count_lock.unlock();
+  }
 }
 
 void lock_test3() {
-  Threads::Scope s(count_lock);
-  count3++;
+  while(1) {
+    count_lock.lock();
+    for(int i=0; i<100; i++) count3++;
+    count_lock.unlock();
+  }
 }
+
+int ratio_test(int a, int b, float r) {
+  float f = (float)a / (float)b;
+  if (a < b) f = 1.0/f;
+  if (f > r) return 1;
+  return 0;
+}
+
 
 void showp() {
   Serial.print(p1);
@@ -94,14 +111,21 @@ bool other() { return 1; }
 void runtest() {
   int save_p;
   int save_time;
+  float rate;
 
   // benchmark with no threading
   my_priv_func1(1);
   save_time = p1;
 
+  Serial.print("CPU speed consistency ");
+  my_priv_func1(1);
+  rate = (float)p1 / (float)save_time;
+  if (rate < 1.2 && rate > 0.8) Serial.println("OK");
+  else Serial.println("***FAIL***");
+
   Serial.print("Test thread start ");
   id1 = threads.addThread(my_priv_func1, 1);
-  delayx(500);
+  delayx(300);
   if (p1 != 0) Serial.println("OK");
   else Serial.println("***FAIL***");
 
@@ -117,8 +141,8 @@ void runtest() {
   else Serial.println("***FAIL***");
 
   Serial.print("Test thread speed ");
-  float rate = (float)p1 / (float)save_time;
-  if (rate < 0.6 && rate > 0.4) Serial.println("OK");
+  rate = (float)p1 / (float)save_time;
+  if (rate < 0.7 && rate > 0.3) Serial.println("OK");
   else Serial.println("***FAIL***");
 
   Serial.print("Speed no threads: ");
@@ -153,7 +177,7 @@ void runtest() {
   id1 = threads.addThread(my_priv_func1, 1);
   threads.delay(1100);
   rate = (float)p1 / (float)save_time;
-  if (rate > 0.9 && rate < 1.1) Serial.println("OK");
+  if (rate > 0.7 && rate < 1.4) Serial.println("OK");
   else Serial.println("***FAIL***");
 
   Serial.print("Yield wait ratio: ");
@@ -282,12 +306,12 @@ void runtest() {
   id1 = threads.addThread(lock_test1);
   id2 = threads.addThread(lock_test2);
   id3 = threads.addThread(lock_test3);
-  delayx(1000);
+  delayx(3000);
   threads.kill(id1);
   threads.kill(id2);
   threads.kill(id3);
-  if (count1 - count2 > 1000 || count2 - count1 > 1000) Serial.println("***FAIL***");
-  else if (count1 - count3 > 1000 || count3 - count1 > 1000) Serial.println("***FAIL***");
+  if (ratio_test(count1, count2, 1.2)) Serial.println("***FAIL***");
+  //else if (ratio_test(count1, count3, 1.2)) Serial.println("***FAIL***");
   else Serial.println("OK");
 
   Serial.print(count1);

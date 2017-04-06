@@ -328,6 +328,7 @@ Revision 0.3: April 2017
 2. Add setSliceMicros() and setSliceMillis()
 3. "lock" will suspend blocking thread until "unlock" and then give thread priority
 4. Add ThreadWrap macro and supporting classes
+5. Support linking with LTO (link time optimization)
 
 Other
 -----------------------------
