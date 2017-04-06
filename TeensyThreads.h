@@ -61,25 +61,7 @@ extern "C" {
   void loadNextThread();
 }
 
-/*
- * ThreadLock is a simple function for starting/stopping
- * threading during critical sections by using scope. It stops threading
- * on creation and then restarts it on destruction when it goes
- * out of scope.
- *
- * usage example:
- *
- *   while(state == 1) {
- *     if (needupdate) {
- *       ThreadLock lock;
- *       updatedata++;
- *       errorcode = 15;
- *     }
- *   }
- *
- */
-
-// The stack frame saved by th interrupt
+// The stack frame saved by the interrupt
 typedef struct {
   uint32_t r0;
   uint32_t r1;
@@ -91,7 +73,7 @@ typedef struct {
   uint32_t xpsr;
 } interrupt_stack_t;
 
-// The stack frame saves by the context switch
+// The stack frame saved by the context switch
 typedef struct {
   uint32_t r4;
   uint32_t r5;
@@ -146,7 +128,7 @@ class ThreadInfo {
     uint8_t *stack=0;
     int my_stack = 0;
     software_stack_t save;
-    int flags = 0;
+    volatile int flags = 0;
     int priority = 0;
     void *sp;
     int ticks;

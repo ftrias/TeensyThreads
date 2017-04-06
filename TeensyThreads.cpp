@@ -11,6 +11,8 @@ IntervalTimer context_timer;
 
 Threads threads;
 
+#define __flush_cpu() __asm__ volatile("DMB");
+
 // These variables are used by the assembly context_switch() function.
 // They are copies or pointers to data in Threads and ThreadInfo
 // and put here seperately in order to simplify the code.
@@ -44,11 +46,11 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
  * start() - Begin threading
  */
 int Threads::start(int prev_state) {
-  __asm volatile("CPSID I");
+  __disable_irq();
   int old_state = currentActive;
   if (prev_state == -1) prev_state = STARTED;
   currentActive = prev_state;
-  __asm volatile("CPSIE I");
+  __enable_irq();
   return old_state;
 }
 
@@ -59,10 +61,10 @@ int Threads::start(int prev_state) {
  * because it could destabalize the system if thread 0 is stopped.
  */
 int Threads::stop() {
-  __asm volatile("CPSID I");
+  __disable_irq();
   int old_state = currentActive;
   currentActive = STOPPED;
-  __asm volatile("CPSIE I");
+  __enable_irq();
   return old_state;
 }
 
@@ -189,7 +191,7 @@ int Threads::setSliceMillis(int milliseconds)
  * future, this should be coded in assembly to make sure.
  */
 extern volatile uint32_t systick_millis_count;
-void __attribute((naked)) systick_isr(void)
+void __attribute((naked, noinline)) systick_isr(void)
 {
   systick_millis_count++;
   if (currentUseSystick) {
@@ -199,15 +201,14 @@ void __attribute((naked)) systick_isr(void)
   __asm volatile("bx lr");
 }
 
-void __attribute((naked)) svcall_isr(void)
+void __attribute((naked, noinline)) svcall_isr(void)
 {
-  __asm volatile("TST lr, #4 \n");
-  __asm volatile("BEQ is_msp \n");
-  __asm volatile("MRS r0, PSP \n");
-  __asm volatile("B is_done \n");
-  __asm volatile("is_msp: \n");
-  __asm volatile("MRS r0, MSP \n");
-  __asm volatile("is_done: \n");
+  // Get the right stack so we can extract the PC (next instruction)
+  // and then see the SVC calling instruction number
+  __asm volatile("TST lr, #4 \n"
+                 "ITE EQ \n"
+                 "MRSEQ r0, msp \n"
+                 "MRSNE r0, psp \n");
   register unsigned int *rsp __asm("r0");
   unsigned int svc = ((uint8_t*)rsp[6])[-2];
   if (svc == Threads::SVC_NUMBER) {
@@ -393,9 +394,9 @@ void Threads::delay(int millisecond) {
 
 int Threads::id() {
   volatile int ret;
-  __asm volatile("CPSID I");
+  __disable_irq();
   ret = current_thread;
-  __asm volatile("CPSIE I");
+  __enable_irq();
   return ret;
 }
 
@@ -410,19 +411,19 @@ int Threads::getStackRemaining(int id) {
  * On creation, stop threading and save state
  */
 Threads::Suspend::Suspend() {
-  __asm volatile("CPSID I");
+  __disable_irq();
   save_state = currentActive;
   currentActive = 0;
-  __asm volatile("CPSIE I");
+  __enable_irq();
 }
 
 /*
  * On destruction, restore threading state
  */
 Threads::Suspend::~Suspend() {
-  __asm volatile("CPSID I");
+  __disable_irq();
   currentActive = save_state;
-  __asm volatile("CPSIE I");
+  __enable_irq();
 }
 
 int Threads::Mutex::getState() {
@@ -432,20 +433,23 @@ int Threads::Mutex::getState() {
   return ret;
 }
 
-int Threads::Mutex::lock(unsigned int timeout_ms) {
-  int p;
+int __attribute__ ((noinline)) Threads::Mutex::lock(unsigned int timeout_ms) {
+  if (try_lock()) return 1; // we're good, so avoid more checks
+
   uint32_t start = systick_millis_count;
   while (1) {
-    p = try_lock();
-    if (p) return 1;
+    if (try_lock()) return 1;
     if (timeout_ms && (systick_millis_count - start > timeout_ms)) return 0;
-    if (waitthread==-1) { // can hold 1 thread is suspend until unlock
+    if (waitthread==-1) { // can hold 1 thread suspend until unlock
+      int p = threads.stop();
       waitthread = threads.current_thread;
       waitcount = currentCount;
       threads.suspend(waitthread);
+      threads.start(p);
     }
     threads.yield();
   }
+  __flush_cpu();
   return 0;
 }
 
@@ -460,18 +464,20 @@ int Threads::Mutex::try_lock() {
   return 0;
 }
 
-int Threads::Mutex::unlock() {
+int __attribute__ ((noinline)) Threads::Mutex::unlock() {
   int p = threads.stop();
   if (state==1) {
     state = 0;
-    if (waitthread >= 0) {
+    if (waitthread >= 0) { // reanimate a suspended thread waiting for unlock
       threads.setPriority(waitthread, waitcount);
       threads.restart(waitthread);
       waitthread = -1;
+      __flush_cpu();
       threads.yield_and_start();
       return 1;
     }
   }
+  __flush_cpu();
   threads.start(p);
   return 1;
 }
