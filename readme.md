@@ -5,6 +5,8 @@ Teensy Threading Library implements preemptive threads for the Teensy 3.x
 platform from [PJRC](https://www.pjrc.com/teensy/index.html). It supports a
 native interface and a `std::thread` interface.
 
+Official repsitory https://github.com/ftrias/TeensyThreads
+
 Simple example
 ------------------------------
 

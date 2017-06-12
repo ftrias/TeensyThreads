@@ -1,4 +1,3 @@
-
 /*
  * Threads.h - Library for threading on the Teensy.
  * Created by Fernando Trias, January 2017.
@@ -312,7 +311,7 @@ public:
       Mutex &getLock() { return lk; }
   };
 
-#define ThreadWrap(OLDOBJ, NEWOBJ) Threads::Grab<typeof(OLDOBJ)> NEWOBJ(OLDOBJ);
+#define ThreadWrap(OLDOBJ, NEWOBJ) Threads::Grab<decltype(OLDOBJ)> NEWOBJ(OLDOBJ);
 #define ThreadClone(NEWOBJ) (NEWOBJ.grab().get())
 
 };
