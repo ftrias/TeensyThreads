@@ -87,7 +87,7 @@ The following functions of `class Threads` control threads. Items in all caps
 are const members of `Threads` and are accessed as in `Threads::EMPTY`.
 
 Threads | Description
-- | -
+--- | ---
 int id(); | Get the id of the currently running thread
 int getState(int id); | Get the state; see class constants. Can be EMPTY, RUNNING, ENDED, SUSPENDED.
 int wait(int id, unsigned int timeout_ms = 0) | Wait until thread ends, up to timeout_ms milliseconds. If 0, wait indefinitely.
@@ -109,7 +109,7 @@ int setMicroTimer(int tick_microseconds = DEFAULT_TICK_MICROSECONDS) | use the m
 In addition, the Threads class has a member class for mutexes (or locks):
 
 Threads::Mutex | Description
-- | -
+--- | ---
 int getState() | Get the lock state; 1+=locked; 0=unlocked
 int lock(unsigned int timeout_ms = 0) | Lock, optionally waiting up to timeout_ms milliseconds
 int try_lock() | If lock available, get it and return 1; otherwise return 0
@@ -118,7 +118,7 @@ int unlock() | Unlock if locked
 When possible, it's best to use `Threads::Scope` instead of `Threads::Mutex` to ensure orderly locking and unlocking.
 
 Threads::Scope | Description
-- | -
+--- | ---
 Scope(Mutex& m) | On creation, mutex is locked
 ~Scope() | On descruction, it is unlocked
 
