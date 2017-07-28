@@ -99,6 +99,7 @@ context_switch_check:
 
 call_direct:
 
+  // Just do the context-switch even if it's not time
   LDR r0, =currentActive
   LDR r0, [r0]
   CMP r0, #1

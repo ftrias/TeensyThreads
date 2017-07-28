@@ -30,15 +30,22 @@ extern "C" {
 }
 
 Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
+  // initilize thread slots to empty
+  for(int i=0; i<MAX_THREADS; i++) {
+    threadp[i] = NULL;
+  }
+  // fill thread 0, which is always running
+  threadp[0] = new ThreadInfo();
+
   // initialize context_switch() globals from thread 0, which is MSP and always running
-  currentThread = thread;        // thread 0 is active
-  currentSave = &thread[0].save;
+  currentThread = threadp[0];        // thread 0 is active
+  currentSave = &threadp[0]->save;
   currentMSP = 1;
   currentSP = 0;
   currentCount = Threads::DEFAULT_TICKS;
   currentActive = FIRST_RUN;
-  thread[0].flags = RUNNING;
-  thread[0].ticks = DEFAULT_TICKS;
+  threadp[0]->flags = RUNNING;
+  threadp[0]->ticks = DEFAULT_TICKS;
   currentUseSystick = 1;
 }
 
@@ -75,18 +82,20 @@ int Threads::stop() {
  */
 void Threads::getNextThread() {
   // First, save the currentSP set by context_switch
-  thread[current_thread].sp = currentSP;
+  threadp[current_thread]->sp = currentSP;
 
   // Find any priority threads
   int priority_thread = -1;
   for(int i=0; i < MAX_THREADS; i++) {
-    if (thread[current_thread].flags == RUNNING) {
-      if (thread[i].priority) {
-        current_thread = i;
-        priority_thread = i;
-        currentCount = thread[i].ticks; // .priority
-        thread[i].priority = 0;
-        break;
+    if (threadp[i]) { // initialized thread?
+      if (threadp[current_thread]->flags == RUNNING) { // is it running?
+        if (threadp[i]->priority) {
+          current_thread = i;
+          priority_thread = i;
+          currentCount = threadp[i]->ticks; // .priority
+          threadp[i]->priority = 0;
+          break;
+        }
       }
     }
   }
@@ -100,15 +109,15 @@ void Threads::getNextThread() {
         current_thread = 0; // thread 0 is MSP; always active so return
         break;
       }
-      if (thread[current_thread].flags == RUNNING) break;
+      if (threadp[current_thread] && threadp[current_thread]->flags == RUNNING) break;
     }
-    currentCount = thread[current_thread].ticks;
+    currentCount = threadp[current_thread]->ticks;
   }
 
-  currentThread = &thread[current_thread];
-  currentSave = &thread[current_thread].save;
+  currentThread = threadp[current_thread];
+  currentSave = &threadp[current_thread]->save;
   currentMSP = (current_thread==0?1:0);
-  currentSP = thread[current_thread].sp;
+  currentSP = threadp[current_thread]->sp;
 }
 
 /*
@@ -231,7 +240,7 @@ void __attribute((naked, noinline)) svcall_isr(void)
 void Threads::del_process(void)
 {
   int old_state = threads.stop();
-  ThreadInfo *me = &threads.thread[threads.current_thread];
+  ThreadInfo *me = threads.threadp[threads.current_thread];
   // Would love to delete stack here but the thread doesn't
   // end now. It continues until the next tick.
   // if (me->my_stack) {
@@ -285,25 +294,29 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
   int old_state = stop();
   if (stack_size == -1) stack_size = DEFAULT_STACK_SIZE;
   for (int i=1; i < MAX_THREADS; i++) {
-    if (thread[i].flags == ENDED || thread[i].flags == EMPTY) { // free thread
-      if (thread[i].stack && thread[i].my_stack) {
-        delete[] thread[i].stack;
+    if (threadp[i] == NULL) { // empty thread, so fill it
+      threadp[i] = new ThreadInfo();
+    }
+    if (threadp[i]->flags == ENDED || threadp[i]->flags == EMPTY) { // free thread
+      ThreadInfo *tp = threadp[i]; // working on this thread
+      if (tp->stack && tp->my_stack) {
+        delete[] tp->stack;
       }
       if (stack==0) {
         stack = new uint8_t[stack_size];
-        thread[i].my_stack = 1;
+        tp->my_stack = 1;
       }
       else {
-        thread[i].my_stack = 0;
+        tp->my_stack = 0;
       }
-      thread[i].stack = (uint8_t*)stack;
-      thread[i].stack_size = stack_size;
-      void *psp = loadstack(p, arg, thread[i].stack, thread[i].stack_size);
-      thread[i].sp = psp;
-      thread[i].ticks = DEFAULT_TICKS;
-      thread[i].flags = RUNNING;
-      thread[i].save.lr = 0xFFFFFFF9;
-      thread[i].priority = 0;
+      tp->stack = (uint8_t*)stack;
+      tp->stack_size = stack_size;
+      void *psp = loadstack(p, arg, tp->stack, tp->stack_size);
+      tp->sp = psp;
+      tp->ticks = DEFAULT_TICKS;
+      tp->flags = RUNNING;
+      tp->save.lr = 0xFFFFFFF9;
+      tp->priority = 0;
       currentActive = old_state;
       thread_count++;
       if (old_state == STARTED || old_state == FIRST_RUN) start();
@@ -316,12 +329,12 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
 
 int Threads::getState(int id)
 {
-  return thread[id].flags;
+  return threadp[id]->flags;
 }
 
 int Threads::setState(int id, int state)
 {
-  thread[id].flags = state;
+  threadp[id]->flags = state;
   return state;
 }
 
@@ -333,7 +346,7 @@ int Threads::wait(int id, unsigned int timeout_ms)
   volatile int state;
   while (1) {
     if (timeout_ms != 0 && millis() - start > timeout_ms) return -1;
-    state = thread[id].flags;
+    state = threadp[id]->flags;
     if (state != RUNNING) break;
     yield();
   }
@@ -342,25 +355,25 @@ int Threads::wait(int id, unsigned int timeout_ms)
 
 int Threads::kill(int id)
 {
-  thread[id].flags = ENDED;
+  threadp[id]->flags = ENDED;
   return id;
 }
 
 int Threads::suspend(int id)
 {
-  thread[id].flags = SUSPENDED;
+  threadp[id]->flags = SUSPENDED;
   return id;
 }
 
 int Threads::restart(int id)
 {
-  thread[id].flags = RUNNING;
+  threadp[id]->flags = RUNNING;
   return id;
 }
 
 void Threads::setTimeSlice(int id, unsigned int ticks)
 {
-  thread[id].ticks = ticks - 1;
+  threadp[id]->ticks = ticks - 1;
 }
 
 void Threads::setDefaultTimeSlice(unsigned int ticks)
@@ -371,7 +384,7 @@ void Threads::setDefaultTimeSlice(unsigned int ticks)
 void Threads::setPriority(int id, int level)
 {
   if (id == -1) id = current_thread;
-  thread[id].priority = level;
+  threadp[id]->priority = level;
 }
 
 void Threads::setDefaultStackSize(unsigned int bytes_size)
@@ -401,10 +414,10 @@ int Threads::id() {
 }
 
 int Threads::getStackUsed(int id) {
-  return thread[id].stack + thread[id].stack_size - (uint8_t*)thread[id].sp;
+  return threadp[id]->stack + threadp[id]->stack_size - (uint8_t*)threadp[id]->sp;
 }
 int Threads::getStackRemaining(int id) {
-  return (uint8_t*)thread[id].sp - thread[id].stack;
+  return (uint8_t*)threadp[id]->sp - threadp[id]->stack;
 }
 
 /*

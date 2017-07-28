@@ -332,6 +332,9 @@ Revision 0.3: April 2017
 4. Add ThreadWrap macro and supporting classes
 5. Support linking with LTO (link time optimization)
 
+Revision 0.4: July 2017
+1. Make ThreadInfo dynamic, saving memory for unused threads
+
 Other
 -----------------------------
 

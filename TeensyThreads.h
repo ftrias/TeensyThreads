@@ -178,7 +178,9 @@ protected:
    * complexity and possibly bugs. So to simplifiy for now, we use an array.
    * But in the future, a linked list might be more appropriate.
    */
-  ThreadInfo thread[MAX_THREADS];
+  ThreadInfo *threadp[MAX_THREADS];
+  // This used to be allocated statically, as below. Kept for reference in case of bugs.
+  // ThreadInfo thread[MAX_THREADS];
 
 public:
   Threads();
