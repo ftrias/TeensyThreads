@@ -83,8 +83,8 @@ If a stack has been allocated by the library and not supplied by the caller, it
 will be freed when a new thread is added, not when it terminates. If the stack
 was supplied by the caller, the caller must free it if needed.
 
-The following functions of `class Threads` control threads. Items in all caps
-are const members of `Threads` and are accessed as in `Threads::EMPTY`.
+The following members of `class Threads` control threads. Items in all caps
+are constants in `Threads` and are accessed as in `Threads::EMPTY`.
 
 Threads | Description
 --- | ---
@@ -192,12 +192,13 @@ For example:
   }
 ```
 
-For widely used libraries like Serial, adding locks may require
+Experimental: For widely used libraries like Serial, adding locks may require
 vast changes to the code. Because of this, the library provides a helper class
 and set of macros to encapsulate all method calls with a lock. An example
 illustrates its use:
 
 ```C++
+// this method is experimental
 ThreadWrap(Serial, SerialX);
 #define Serial ThreadClone(SerialX)
 
@@ -349,4 +350,4 @@ situation. This combined with boredom and abundant free time resulting in
 complete overkill for the solution and thus this implementation of preemptive
 threads.
 
-Copyright 2017 by Fernando Trias. All rights reserved.
+Copyright 2017 by Fernando Trias. See license.txt for details.
