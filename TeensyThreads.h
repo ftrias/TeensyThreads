@@ -77,6 +77,7 @@ extern "C" {
   void context_switch_pit_isr(void);
   void systick_isr(void);
   void loadNextThread();
+  void stack_overflow_isr(void);
 }
 
 // The stack frame saved by the interrupt
@@ -166,6 +167,7 @@ public:
   // the implementation. See notes of ThreadInfo.
   static const int MAX_THREADS = 8;
   int DEFAULT_STACK_SIZE = 1024;
+  const int DEFAULT_STACK0_SIZE = 10240; // estimate for thread 0?
   int DEFAULT_TICKS = 10;
   static const int DEFAULT_TICK_MICROSECONDS = 100;
 

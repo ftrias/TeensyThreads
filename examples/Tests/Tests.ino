@@ -108,6 +108,23 @@ bool endTransaction() { return 1; }
 bool other() { return 1; }
 };
 
+int stack_fault = 0;
+int stack_id = 0;
+
+void stack_overflow_isr(void) {
+  stack_fault = 1;
+  threads.kill(threads.id());
+}
+
+// turn off optimizations or the optimizer will remove the recursion because
+// it is smart enough to know it doesn't do anything
+void __attribute__((optimize("O0"))) recursive_thread(int level) {
+  if (stack_fault) return;
+  char x[128]; // use up some stack space
+  delay(20);
+  recursive_thread(level+1);
+}
+
 void runtest() {
   int save_p;
   int save_time;
@@ -349,6 +366,15 @@ void runtest() {
   Serial.print("Test Grab lock ");
   if (subinst.test(&(sub2.getLock())) == 1) Serial.println("OK");
   else Serial.println("***FAIL***");
+
+  Serial.print("Test thread stack overflow ");
+  uint8_t *mstack = new uint8_t[1024];
+  stack_id = threads.addThread(recursive_thread, 0, 512, mstack+512);
+  threads.delay(2000);
+  threads.kill(stack_id);
+  if (stack_fault) Serial.println("OK");
+  else Serial.println("***FAIL***");
+  delete[] mstack;
 }
 
 void runloop() {

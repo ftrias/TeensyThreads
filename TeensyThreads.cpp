@@ -48,6 +48,13 @@ extern "C" {
   }
 }
 
+extern "C" void stack_overflow_default_isr() { 
+  currentThread->flags = Threads::ENDED;
+}
+extern "C" void stack_overflow_isr(void)       __attribute__ ((weak, alias("stack_overflow_default_isr")));
+
+extern unsigned long _estack;   // the main thread 0 stack
+
 static void threads_svcall_isr(void);
 static void threads_systick_isr(void);
 
@@ -68,6 +75,8 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   currentActive = FIRST_RUN;
   threadp[0]->flags = RUNNING;
   threadp[0]->ticks = DEFAULT_TICKS;
+  threadp[0]->stack = (uint8_t*)&_estack - DEFAULT_STACK0_SIZE;
+  threadp[0]->stack_size = DEFAULT_STACK0_SIZE;
   currentUseSystick = 1;
 
   // commandeer the SVCall & SysTick Exceptions
@@ -109,6 +118,12 @@ int Threads::stop() {
 void Threads::getNextThread() {
   // First, save the currentSP set by context_switch
   threadp[current_thread]->sp = currentSP;
+
+  // did we overflow the stack (don't check thread 0)?
+  // allow an extra 8 bytes for a call to the ISR and one additional call or variable
+  if (current_thread && ((uint8_t*)currentThread->sp - currentThread->stack <= 8)) {
+    stack_overflow_isr();
+  }
 
   // Find any priority threads
   int priority_thread = -1;
