@@ -48,6 +48,9 @@ extern "C" {
   }
 }
 
+static void threads_svcall_isr(void);
+static void threads_systick_isr(void);
+
 Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   // initilize thread slots to empty
   for(int i=0; i<MAX_THREADS; i++) {
@@ -66,6 +69,10 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   threadp[0]->flags = RUNNING;
   threadp[0]->ticks = DEFAULT_TICKS;
   currentUseSystick = 1;
+
+  // commandeer the SVCall & SysTick Exceptions
+  _VectorsRam[11] = threads_svcall_isr;
+  _VectorsRam[15] = threads_systick_isr;
 }
 
 /*
@@ -219,9 +226,10 @@ int Threads::setSliceMillis(int milliseconds)
  * future, this should be coded in assembly to make sure.
  */
 extern volatile uint32_t systick_millis_count;
-void __attribute((naked, noinline)) systick_isr(void)
+static void __attribute((naked, noinline)) threads_systick_isr(void)
 {
   systick_millis_count++;
+  // TODO: Teensyduino 1.38 calls MillisTimer::runFromTimer() from SysTick
   if (currentUseSystick) {
     // we branch in order to preserve LR and the stack
     __asm volatile("b context_switch");
@@ -229,7 +237,7 @@ void __attribute((naked, noinline)) systick_isr(void)
   __asm volatile("bx lr");
 }
 
-void __attribute((naked, noinline)) svcall_isr(void)
+static void __attribute((naked, noinline)) threads_svcall_isr(void)
 {
   // Get the right stack so we can extract the PC (next instruction)
   // and then see the SVC calling instruction number
