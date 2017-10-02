@@ -30,6 +30,9 @@ IntervalTimer context_timer;
 
 Threads threads;
 
+unsigned int time_start;
+unsigned int time_end;
+
 #define __flush_cpu() __asm__ volatile("DMB");
 
 // These variables are used by the assembly context_switch() function.
@@ -55,8 +58,60 @@ extern "C" void stack_overflow_isr(void)       __attribute__ ((weak, alias("stac
 
 extern unsigned long _estack;   // the main thread 0 stack
 
-static void threads_svcall_isr(void);
-static void threads_systick_isr(void);
+// static void threads_svcall_isr(void);
+// static void threads_systick_isr(void);
+
+IsrFunction Threads::save_systick_isr;
+IsrFunction Threads::save_svcall_isr;
+
+/*
+ * Replace the SysTick interrupt for our context switching. Note that
+ * this function is "naked" meaning it does not save it's registers
+ * on the stack. This is so we can preserve the stack of the caller.
+ *
+ * Interrupts will save r0-r4 in the stack and since this function
+ * is short and simple, it should only use those registers. In the
+ * future, this should be coded in assembly to make sure.
+ */
+extern volatile uint32_t systick_millis_count;
+extern "C" void systick_isr();
+void __attribute((naked, noinline)) threads_systick_isr(void)
+{
+  asm volatile("push {r0-r4,lr}");
+  (*Threads::save_systick_isr)();
+  asm volatile("pop {r0-r4,lr}");
+
+  // TODO: Teensyduino 1.38 calls MillisTimer::runFromTimer() from SysTick
+  if (currentUseSystick) {
+    // we branch in order to preserve LR and the stack
+    __asm volatile("b context_switch");
+  }
+  __asm volatile("bx lr");
+}
+
+void __attribute((naked, noinline)) threads_svcall_isr(void)
+{
+  asm volatile("push {r0-r4,lr}");
+  (*Threads::save_svcall_isr)();
+  asm volatile("pop {r0-r4,lr}");
+
+  // Get the right stack so we can extract the PC (next instruction)
+  // and then see the SVC calling instruction number
+  __asm volatile("TST lr, #4 \n"
+                 "ITE EQ \n"
+                 "MRSEQ r0, msp \n"
+                 "MRSNE r0, psp \n");
+  register unsigned int *rsp __asm("r0");
+  unsigned int svc = ((uint8_t*)rsp[6])[-2];
+  if (svc == Threads::SVC_NUMBER) {
+    __asm volatile("b context_switch_direct");
+  }
+  else if (svc == Threads::SVC_NUMBER_ACTIVE) {
+    currentActive = Threads::STARTED;
+    __asm volatile("b context_switch_direct_active");
+  }
+  __asm volatile("bx lr");
+}
 
 Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   // initilize thread slots to empty
@@ -80,7 +135,9 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   currentUseSystick = 1;
 
   // commandeer the SVCall & SysTick Exceptions
+  save_svcall_isr = _VectorsRam[11];
   _VectorsRam[11] = threads_svcall_isr;
+  save_systick_isr = _VectorsRam[15];
   _VectorsRam[15] = threads_systick_isr;
 }
 
@@ -229,47 +286,6 @@ int Threads::setSliceMillis(int milliseconds)
     setSliceMicros(milliseconds * 1000);
   }
   return 1;
-}
-
-/*
- * Replace the SysTick interrupt for our context switching. Note that
- * this function is "naked" meaning it does not save it's registers
- * on the stack. This is so we can preserve the stack of the caller.
- *
- * Interrupts will save r0-r4 in the stack and since this function
- * is short and simple, it should only use those registers. In the
- * future, this should be coded in assembly to make sure.
- */
-extern volatile uint32_t systick_millis_count;
-static void __attribute((naked, noinline)) threads_systick_isr(void)
-{
-  systick_millis_count++;
-  // TODO: Teensyduino 1.38 calls MillisTimer::runFromTimer() from SysTick
-  if (currentUseSystick) {
-    // we branch in order to preserve LR and the stack
-    __asm volatile("b context_switch");
-  }
-  __asm volatile("bx lr");
-}
-
-static void __attribute((naked, noinline)) threads_svcall_isr(void)
-{
-  // Get the right stack so we can extract the PC (next instruction)
-  // and then see the SVC calling instruction number
-  __asm volatile("TST lr, #4 \n"
-                 "ITE EQ \n"
-                 "MRSEQ r0, msp \n"
-                 "MRSNE r0, psp \n");
-  register unsigned int *rsp __asm("r0");
-  unsigned int svc = ((uint8_t*)rsp[6])[-2];
-  if (svc == Threads::SVC_NUMBER) {
-    __asm volatile("b context_switch_direct");
-  }
-  else if (svc == Threads::SVC_NUMBER_ACTIVE) {
-    currentActive = Threads::STARTED;
-    __asm volatile("b context_switch_direct_active");
-  }
-  __asm volatile("bx lr");
 }
 
 /*

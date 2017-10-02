@@ -75,9 +75,10 @@ extern "C" {
   void context_switch(void);
   void context_switch_direct(void);
   void context_switch_pit_isr(void);
-  void systick_isr(void);
   void loadNextThread();
   void stack_overflow_isr(void);
+  void threads_svcall_isr(void);
+  void threads_systick_isr(void);
 }
 
 // The stack frame saved by the interrupt
@@ -157,6 +158,8 @@ typedef void (*ThreadFunction)(void*);
 typedef void (*ThreadFunctionInt)(int);
 typedef void (*ThreadFunctionNone)();
 
+typedef void (*IsrFunction)();
+
 /*
  * Threads handles all the threading interaction with users. It gets
  * instantiated in a global variable "threads".
@@ -202,6 +205,9 @@ protected:
   ThreadInfo *threadp[MAX_THREADS];
   // This used to be allocated statically, as below. Kept for reference in case of bugs.
   // ThreadInfo thread[MAX_THREADS];
+
+  static IsrFunction save_systick_isr;
+  static IsrFunction save_svcall_isr;
 
 public:
   Threads();
@@ -270,7 +276,8 @@ public:
   friend void context_switch(void);
   friend void context_switch_direct(void);
   friend void context_pit_isr(void);
-  friend void systick_isr(void);
+  friend void threads_systick_isr(void);
+  friend void threads_svcall_isr(void);
   friend void loadNextThread();
   friend class ThreadLock;
 
