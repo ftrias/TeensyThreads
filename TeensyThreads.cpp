@@ -77,9 +77,11 @@ extern volatile uint32_t systick_millis_count;
 extern "C" void systick_isr();
 void __attribute((naked, noinline)) threads_systick_isr(void)
 {
-  asm volatile("push {r0-r4,lr}");
-  if (Threads::save_systick_isr) (*Threads::save_systick_isr)();
-  asm volatile("pop {r0-r4,lr}");
+  if (Threads::save_systick_isr) {
+    asm volatile("push {r0-r4,lr}");
+    (*Threads::save_systick_isr)();
+    asm volatile("pop {r0-r4,lr}");
+  }
 
   // TODO: Teensyduino 1.38 calls MillisTimer::runFromTimer() from SysTick
   if (currentUseSystick) {
@@ -91,9 +93,11 @@ void __attribute((naked, noinline)) threads_systick_isr(void)
 
 void __attribute((naked, noinline)) threads_svcall_isr(void)
 {
-  asm volatile("push {r0-r4,lr}");
-  if (Threads::save_svcall_isr) (*Threads::save_svcall_isr)();
-  asm volatile("pop {r0-r4,lr}");
+  if (Threads::save_svcall_isr) {
+    asm volatile("push {r0-r4,lr}");
+    (*Threads::save_svcall_isr)();
+    asm volatile("pop {r0-r4,lr}");
+  }
 
   // Get the right stack so we can extract the PC (next instruction)
   // and then see the SVC calling instruction number
