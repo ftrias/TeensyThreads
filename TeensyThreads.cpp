@@ -78,7 +78,7 @@ extern "C" void systick_isr();
 void __attribute((naked, noinline)) threads_systick_isr(void)
 {
   asm volatile("push {r0-r4,lr}");
-  (*Threads::save_systick_isr)();
+  if (Threads::save_systick_isr) (*Threads::save_systick_isr)();
   asm volatile("pop {r0-r4,lr}");
 
   // TODO: Teensyduino 1.38 calls MillisTimer::runFromTimer() from SysTick
@@ -92,7 +92,7 @@ void __attribute((naked, noinline)) threads_systick_isr(void)
 void __attribute((naked, noinline)) threads_svcall_isr(void)
 {
   asm volatile("push {r0-r4,lr}");
-  (*Threads::save_svcall_isr)();
+  if (Threads::save_svcall_isr) (*Threads::save_svcall_isr)();
   asm volatile("pop {r0-r4,lr}");
 
   // Get the right stack so we can extract the PC (next instruction)
@@ -136,6 +136,7 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
 
   // commandeer the SVCall & SysTick Exceptions
   save_svcall_isr = _VectorsRam[11];
+  if (save_svcall_isr == unused_isr) save_svcall_isr = 0;
   _VectorsRam[11] = threads_svcall_isr;
   save_systick_isr = _VectorsRam[15];
   _VectorsRam[15] = threads_systick_isr;

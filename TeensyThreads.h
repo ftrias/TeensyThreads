@@ -154,6 +154,8 @@ class ThreadInfo {
     int ticks;
 };
 
+extern "C" void unused_isr(void);
+
 typedef void (*ThreadFunction)(void*);
 typedef void (*ThreadFunctionInt)(int);
 typedef void (*ThreadFunctionNone)();
@@ -206,6 +208,7 @@ protected:
   // This used to be allocated statically, as below. Kept for reference in case of bugs.
   // ThreadInfo thread[MAX_THREADS];
 
+public: // public for debugging
   static IsrFunction save_systick_isr;
   static IsrFunction save_svcall_isr;
 
