@@ -176,6 +176,14 @@ public:
   int DEFAULT_TICKS = 10;
   static const int DEFAULT_TICK_MICROSECONDS = 100;
 
+  //ADDED!!!!!!!!!!
+  struct scheduler_info{
+	  volatile int sleep_time_till_end_tick;
+  } task_info[MAX_THREADS];
+  volatile int substractor = 0;
+  //ADDED!!!!!!!!!!
+  void idle();
+  
   // State of threading system
   static const int STARTED = 1;
   static const int STOPPED = 2;
@@ -269,6 +277,9 @@ public:
   // Wait for milliseconds using yield(), giving other slices your wait time
   void delay(int millisecond);
 
+  //put mcu in sleep till next execution. doesn't work with delay, ADDED
+  void sleep(int ms);
+  
   // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
   // can pass the previous state to restore
   int start(int old_state = -1);

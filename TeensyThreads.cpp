@@ -468,6 +468,68 @@ void Threads::delay(int millisecond) {
   while((int)millis() - mx < millisecond) yield();
 }
 
+void Threads::idle() {
+	volatile bool needs_run[thread_count];
+	volatile int i, j;
+	volatile int task_id_ends;
+	__disable_irq();
+	task_id_ends = 0;
+	//get lowest sleep interval from sleeping tasks into task_id_ends
+	for (i = 0; i < thread_count; i++) {
+		//sort by ending time first
+		for (j = i + 1; j < thread_count; ++j) {
+			if (task_info[i].sleep_time_till_end_tick > task_info[j].sleep_time_till_end_tick) {
+				//if end time soonest
+				if (getState(i+1) == SUSPENDED) {
+					task_id_ends = j; //store next task
+				}
+			}
+		}
+	}
+	//set the sleeping time to substractor
+	substractor = task_info[task_id_ends].sleep_time_till_end_tick;
+	
+	if (substractor > 0) {
+		//if sleep is needed
+		enter_sleep(substractor);
+		//store new data based on time spent asleep
+		for (i = 0; i < thread_count; i++) {
+			needs_run[i] = 0;
+				if (getState(i+1) == SUSPENDED) {
+				task_info[i].sleep_time_till_end_tick -= substractor; //substract sleep time
+				//time to run?
+				if (task_info[i].sleep_time_till_end_tick <= 0) {
+					needs_run[i] = 1;
+				} else {
+					needs_run[i] = 0;
+				}
+			}
+		}
+		//for each thread when slept, resume if needed
+		for (i = 0; i < thread_count; i++) {
+			if (needs_run[i]) {
+				setState(i+1, RUNNING);
+				task_info[i].sleep_time_till_end_tick = 60000;
+			}
+		}
+	}
+	//reset substractor
+	substractor = 60000;
+	__enable_irq();
+	yield();
+}
+
+void Threads::sleep(int ms) {
+	int i = id();
+	if (getState(i) == RUNNING) {
+		__disable_irq();
+		task_info[i-1].sleep_time_till_end_tick = ms;
+		setState(i, SUSPENDED);
+		__enable_irq();
+		yield();
+	}
+}
+
 int Threads::id() {
   volatile int ret;
   __disable_irq();
