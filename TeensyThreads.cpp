@@ -491,12 +491,12 @@ void Threads::idle() {
 	
 	if (substractor > 0) {
 		//if sleep is needed
-		enter_sleep(substractor);
+		volatile int time_spent_asleep = enter_sleep(substractor);
 		//store new data based on time spent asleep
 		for (i = 0; i < thread_count; i++) {
 			needs_run[i] = 0;
 				if (getState(i+1) == SUSPENDED) {
-				task_info[i].sleep_time_till_end_tick -= substractor; //substract sleep time
+				task_info[i].sleep_time_till_end_tick -= time_spent_asleep; //substract sleep time
 				//time to run?
 				if (task_info[i].sleep_time_till_end_tick <= 0) {
 					needs_run[i] = 1;
