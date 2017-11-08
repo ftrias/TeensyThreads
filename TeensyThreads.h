@@ -156,6 +156,9 @@ class ThreadInfo {
 
 extern "C" void unused_isr(void);
 
+//added
+extern "C" int enter_sleep(int ms);
+
 typedef void (*ThreadFunction)(void*);
 typedef void (*ThreadFunctionInt)(int);
 typedef void (*ThreadFunctionNone)();

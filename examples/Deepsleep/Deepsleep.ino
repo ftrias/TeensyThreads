@@ -12,7 +12,7 @@ const int LED = 13;
 const int UserLED = 2;
 
 //your sleeping funcion
-extern int enter_sleep(int ms) {
+int enter_sleep(int ms) {
   timer.setTimer(ms);//set sleep time in milliseconds  
   Snooze.hibernate( config ); //go to actual sleep
   //additional, one can use the RTC or a low power timer
