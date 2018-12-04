@@ -1,5 +1,7 @@
 // Example for blinking multiple LEDs
 
+#include "LED.h"
+
 // Pins for LED objects
 const int pinLED = 13;
 // const int pinLED1 = 3;
@@ -13,14 +15,14 @@ LED* led;
 // ...
 
 // Timing variables
-const int blinkForMicroSeconds = 10000;
-const int blinkPeriodMicroSeconds = 1000;
-const int blinkDuty = 50;
-// const int blinkForSeconds1 = 20000;
-// const int blinkPeriodSeconds1 = 500;
+const int blinkForMSeconds = 10000;
+const int blinkPeriodMSeconds = 1000;
+const int blinkDuty = 90;
+// const int blinkForMSeconds1 = 20000;
+// const int blinkPeriodMSeconds1 = 500;
 // const int blinkDuty1 = 25;
-// const int blinkForSeconds2 = 5000;
-// const int blinkPeriodSeconds2 = 1500;
+// const int blinkForMSeconds2 = 5000;
+// const int blinkPeriodMSeconds2 = 1500;
 // const int blinkDuty2 = 75;
 // ...
 
@@ -33,9 +35,9 @@ void setup(){
 	// ...
 
 	// Start threads
-	led->startBlinking(blinkForSeconds, blinkPeriodSeconds, blinkDuty);
-  	//led1->startBlinking(blinkForSeconds1, blinkPeriodSeconds1, blinkDuty1);
-  	//led2->startBlinking(blinkForSeconds2, blinkPeriodSeconds2, blinkDuty2));
+	led->startBlinking(blinkForMSeconds, blinkPeriodMSeconds, blinkDuty);
+  	//led1->startBlinking(blinkForMSeconds1, blinkPeriodMSeconds1, blinkDuty1);
+  	//led2->startBlinking(blinkForMSeconds2, blinkPeriodMSeconds2, blinkDuty2));
   	// ...
 
 }
