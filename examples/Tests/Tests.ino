@@ -1,10 +1,11 @@
 #include <Arduino.h>
 
-#include "Threads.h"
+#include "TeensyThreads.h"
 
 volatile int p1 = 0;
 volatile int p2 = 0;
 volatile int p3 = 0;
+volatile int p4 = 0;
 
 void my_priv_func1(int data){
   p1 = 0;
@@ -26,6 +27,52 @@ void my_priv_func3() {
   while(1) p3++;
 }
 
+void my_priv_func_lock(void *lock) {
+  Threads::Mutex *m = (Threads::Mutex *) lock;
+  p4 = 0;
+  m->lock();
+  uint32_t mx = millis();
+  while(millis() - mx < 500) p1++;
+  m->unlock();
+}
+
+Threads::Mutex count_lock;
+volatile int count1 = 0;
+volatile int count2 = 0;
+volatile int count3 = 0;
+
+void lock_test1() {
+  while(1) {
+    count_lock.lock();
+    for(int i=0; i<500; i++) count1++;
+    count_lock.unlock();
+  }
+}
+
+void lock_test2() {
+  while(1) {
+    count_lock.lock();
+    for(int i=0; i<1000; i++) count2++;
+    count_lock.unlock();
+  }
+}
+
+void lock_test3() {
+  while(1) {
+    count_lock.lock();
+    for(int i=0; i<100; i++) count3++;
+    count_lock.unlock();
+  }
+}
+
+int ratio_test(int a, int b, float r) {
+  float f = (float)a / (float)b;
+  if (a < b) f = 1.0/f;
+  if (f > r) return 1;
+  return 0;
+}
+
+
 void showp() {
   Serial.print(p1);
   Serial.print(" ");
@@ -37,19 +84,65 @@ void showp() {
 
 int id1, id2, id3;
 
+void delay2(uint32_t ms)
+{
+  int mx = millis();
+  while(millis() - mx < ms);
+}
+
 #define delayx delay
+
+
+class subtest {
+public:
+int value;
+void h(int x) { value = x; }
+int test(Threads::Mutex *lk) { return lk->getState(); }
+int getValue() { return value; }
+} subinst;
+
+class WireTest {
+public:
+bool beginTransaction() { return 1; }
+bool endTransaction() { return 1; }
+bool other() { return 1; }
+};
+
+int stack_fault = 0;
+int stack_id = 0;
+
+void stack_overflow_isr(void) {
+  stack_fault = 1;
+  threads.kill(threads.id());
+}
+
+// turn off optimizations or the optimizer will remove the recursion because
+// it is smart enough to know it doesn't do anything
+void __attribute__((optimize("O0"))) recursive_thread(int level) {
+  if (stack_fault) return;
+  char x[128]; // use up some stack space
+  delay(20);
+  recursive_thread(level+1);
+}
 
 void runtest() {
   int save_p;
   int save_time;
+  float rate;
 
   // benchmark with no threading
   my_priv_func1(1);
   save_time = p1;
 
+  Serial.print("CPU speed consistency ");
+  my_priv_func1(1);
+  rate = (float)p1 / (float)save_time;
+  if (rate < 1.2 && rate > 0.8) Serial.println("OK");
+  else Serial.println("***FAIL***");
+
   Serial.print("Test thread start ");
   id1 = threads.addThread(my_priv_func1, 1);
-  delayx(500);
+  delayx(300);
   if (p1 != 0) Serial.println("OK");
   else Serial.println("***FAIL***");
 
@@ -65,8 +158,8 @@ void runtest() {
   else Serial.println("***FAIL***");
 
   Serial.print("Test thread speed ");
-  float rate = (float)p1 / (float)save_time;
-  if (rate < 0.6 && rate > 0.4) Serial.println("OK");
+  rate = (float)p1 / (float)save_time;
+  if (rate < 0.7 && rate > 0.3) Serial.println("OK");
   else Serial.println("***FAIL***");
 
   Serial.print("Speed no threads: ");
@@ -83,7 +176,7 @@ void runtest() {
   id1 = threads.addThread(my_priv_func1, 1);
   threads.setTimeSlice(id1, 200);
   delayx(2000);
-  float expected = (float)save_p * 2.0*200.0 / ((float)Threads::DEFAULT_TICKS + 200.0);
+  float expected = (float)save_p * 2.0*200.0 / ((float)threads.DEFAULT_TICKS + 200.0);
   rate = (float)p1 / (float)expected;
   if (rate > 0.9 && rate < 1.1) Serial.println("OK");
   else Serial.println("***FAIL***");
@@ -101,7 +194,7 @@ void runtest() {
   id1 = threads.addThread(my_priv_func1, 1);
   threads.delay(1100);
   rate = (float)p1 / (float)save_time;
-  if (rate > 0.9 && rate < 1.1) Serial.println("OK");
+  if (rate > 0.7 && rate < 1.4) Serial.println("OK");
   else Serial.println("***FAIL***");
 
   Serial.print("Yield wait ratio: ");
@@ -187,8 +280,101 @@ void runtest() {
   delayx(500);
   save_p = p3;
   delayx(500);
-  if (p3 != 0 && p3 == save_p) Serial.println("OK"); 
+  if (p3 != 0 && p3 == save_p) Serial.println("OK");
   else Serial.println("***FAIL***");
+
+  Serial.print("Test basic lock ");
+  id1 = threads.addThread(my_priv_func1, 2);
+  delayx(500);
+  {
+    Threads::Suspend lock;
+    save_p = p1;
+    delayx(500);
+    if (save_p == p1) Serial.println("OK");
+    else Serial.println("***FAIL***");
+  }
+
+  Serial.print("Test basic unlock ");
+  delayx(500);
+  if (save_p != p1) Serial.println("OK");
+  else Serial.println("***FAIL***");
+
+
+  Serial.print("Test mutex lock state ");
+  Threads::Mutex mx;
+  mx.lock();
+  r = mx.try_lock();
+  if (r == 0) Serial.println("OK");
+  else Serial.println("***FAIL***");
+
+  Serial.print("Test mutex lock thread ");
+  id1 = threads.addThread(my_priv_func_lock, &mx);
+  delayx(200);
+  if (p4 == 0) Serial.println("OK");
+  else Serial.println("***FAIL***");
+
+  Serial.print("Test mutex unlock ");
+  mx.unlock();
+  delayx(500);
+  if (p1 != 0) Serial.println("OK");
+  else Serial.println("***FAIL***");
+
+  Serial.print("Test fast locks ");
+  id1 = threads.addThread(lock_test1);
+  id2 = threads.addThread(lock_test2);
+  id3 = threads.addThread(lock_test3);
+  delayx(3000);
+  threads.kill(id1);
+  threads.kill(id2);
+  threads.kill(id3);
+  if (ratio_test(count1, count2, 1.2)) Serial.println("***FAIL***");
+  //else if (ratio_test(count1, count3, 1.2)) Serial.println("***FAIL***");
+  else Serial.println("OK");
+
+  Serial.print(count1);
+  Serial.print(" ");
+  Serial.print(count2);
+  Serial.print(" ");
+  Serial.print(count3);
+  Serial.println();
+
+  Serial.print("Test std::mutex lock ");
+  std::mutex g_mutex;
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_mutex.try_lock() == 0) Serial.println("OK");
+    else Serial.println("***FAIL***");
+  }
+
+  Serial.print("Test std::mutex unlock ");
+  if (g_mutex.try_lock() == 1) Serial.println("OK");
+  else Serial.println("***FAIL***");
+  g_mutex.unlock();
+
+  Serial.print("Test Grab init ");
+  subinst.h(10);
+  ThreadWrap(subinst, sub2);
+  #define subinst ThreadClone(sub2)
+  if(subinst.getValue() == 10) Serial.println("OK");
+  else Serial.println("***FAIL***");
+
+  Serial.print("Test Grab set ");
+  subinst.h(25);
+  if(subinst.getValue() == 25) Serial.println("OK");
+  else Serial.println("***FAIL***");
+
+  Serial.print("Test Grab lock ");
+  if (subinst.test(&(sub2.getLock())) == 1) Serial.println("OK");
+  else Serial.println("***FAIL***");
+
+  Serial.print("Test thread stack overflow ");
+  uint8_t *mstack = new uint8_t[1024];
+  stack_id = threads.addThread(recursive_thread, 0, 512, mstack+512);
+  threads.delay(2000);
+  threads.kill(stack_id);
+  if (stack_fault) Serial.println("OK");
+  else Serial.println("***FAIL***");
+  delete[] mstack;
 }
 
 void runloop() {
@@ -200,13 +386,11 @@ void runloop() {
     Serial.print(": ");
     Serial.print((millis() - timeloop)/1000);
     Serial.print(" sec ");
-    Serial.print(p2);
-    Serial.println();
+    showp();
     count++;
     mx = millis();
   }
 }
-
 
 void setup() {
   delay(1000);
