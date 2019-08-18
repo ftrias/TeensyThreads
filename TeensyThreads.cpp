@@ -25,8 +25,12 @@
 #include "TeensyThreads.h"
 #include <Arduino.h>
 
+#if defined(__MK20DX256__) || defined(__MK20DX128__)
+
 #include <IntervalTimer.h>
 IntervalTimer context_timer;
+
+#endif
 
 Threads threads;
 
@@ -65,6 +69,7 @@ IsrFunction Threads::save_systick_isr;
 IsrFunction Threads::save_svcall_isr;
 
 /*
+ * Teensy 3:
  * Replace the SysTick interrupt for our context switching. Note that
  * this function is "naked" meaning it does not save it's registers
  * on the stack. This is so we can preserve the stack of the caller.
@@ -117,6 +122,81 @@ void __attribute((naked, noinline)) threads_svcall_isr(void)
   __asm volatile("bx lr");
 }
 
+#ifdef __IMXRT1062__
+
+/*
+ * 
+ * Teensy 4:
+ * Use unused GPT timers for context switching
+ */
+
+extern "C" void unused_interrupt_vector(void);
+
+static void __attribute((naked, noinline)) gpt1_isr() {
+  GPT1_SR |= GPT_SR_OF1;  // clear set bit
+  __asm volatile("b context_switch");
+}
+
+static void __attribute((naked, noinline)) gpt2_isr() {
+  GPT2_SR |= GPT_SR_OF1;  // clear set bit
+  __asm volatile("b context_switch");
+}
+
+bool gtp1_init(unsigned int microseconds)
+{
+  // Initialization code derived from @manitou48.
+  // See https://github.com/manitou48/teensy4/blob/master/gpt_isr.ino
+  // See https://forum.pjrc.com/threads/54265-Teensy-4-testing-mbed-NXP-MXRT1050-EVKB-(600-Mhz-M7)?p=193217&viewfull=1#post193217
+
+  // keep track of which GPT timer we are using
+  static int gpt_number = 0;
+
+  // not configured yet, so find an inactive GPT timer
+  if (gpt_number == 0) {
+    if (! NVIC_IS_ENABLED(IRQ_GPT1)) {
+      attachInterruptVector(IRQ_GPT1, &gpt1_isr);
+      NVIC_ENABLE_IRQ(IRQ_GPT1);
+      gpt_number = 1;
+    }
+    else if (! NVIC_IS_ENABLED(IRQ_GPT2)) {
+      attachInterruptVector(IRQ_GPT2, &gpt2_isr);
+      NVIC_ENABLE_IRQ(IRQ_GPT2);
+      gpt_number = 2;
+    }
+    else {
+      // if neither timer is free, we fail
+      return false;
+    }
+  }
+
+  switch (gpt_number) {
+    case 1:
+      CCM_CCGR1 |= CCM_CCGR1_GPT(CCM_CCGR_ON) ;  // enable GPT1 module
+      GPT1_CR = 0;                   // disable timer
+      GPT1_PR = 23;                  // prescale: divide by 24 so 1 tick = 1 microsecond at 24MHz
+      GPT1_OCR1 = microseconds - 1;  // compare value
+      GPT1_SR = 0x3F;                // clear all prior status
+      GPT1_IR = GPT_IR_OF1IE;        // use first timer
+      GPT1_CR = GPT_CR_EN | GPT_CR_CLKSRC(1) ; // set to peripheral clock (24MHz)
+      break;
+    case 2:
+      CCM_CCGR1 |= CCM_CCGR1_GPT(CCM_CCGR_ON) ;  // enable GPT1 module
+      GPT2_CR = 0;                   // disable timer
+      GPT2_PR = 23;                  // prescale: divide by 24 so 1 tick = 1 microsecond at 24MHz
+      GPT2_OCR1 = microseconds - 1;  // compare value
+      GPT2_SR = 0x3F;                // clear all prior status
+      GPT2_IR = GPT_IR_OF1IE;        // use first timer
+      GPT2_CR = GPT_CR_EN | GPT_CR_CLKSRC(1) ; // set to peripheral clock (24MHz)
+      break;
+    default:
+      return false;
+  }
+
+  return true;
+}
+
+#endif
+
 Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   // initilize thread slots to empty
   for(int i=0; i<MAX_THREADS; i++) {
@@ -136,14 +216,31 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   threadp[0]->ticks = DEFAULT_TICKS;
   threadp[0]->stack = (uint8_t*)&_estack - DEFAULT_STACK0_SIZE;
   threadp[0]->stack_size = DEFAULT_STACK0_SIZE;
+
+#ifdef __IMXRT1062__
+
+  // commandeer SVCall & use GTP1 Interrupt
+  save_svcall_isr = _VectorsRam[11];
+  if (save_svcall_isr == unused_interrupt_vector) save_svcall_isr = 0;
+  _VectorsRam[11] = threads_svcall_isr;
+
+  currentUseSystick = 0; // disable Systick calls
+  gtp1_init(1000);       // tick every millisecond
+
+#else
+
   currentUseSystick = 1;
 
   // commandeer the SVCall & SysTick Exceptions
   save_svcall_isr = _VectorsRam[11];
   if (save_svcall_isr == unused_isr) save_svcall_isr = 0;
   _VectorsRam[11] = threads_svcall_isr;
+  
   save_systick_isr = _VectorsRam[15];
+  if (save_systick_isr == unused_isr) save_systick_isr = 0;
   _VectorsRam[15] = threads_systick_isr;
+
+#endif
 }
 
 /*
@@ -242,12 +339,20 @@ extern "C" void context_switch_pit_isr();
  * Stop using the SysTick interrupt and start using
  * the IntervalTimer timer. The parameter is the number of microseconds
  * for each tick.
- *
- * Implementation strategy suggested by @tni in Teensy Forums; see
- * https://forum.pjrc.com/threads/41504-Teensy-3-x-multithreading-library-first-release
  */
 int Threads::setMicroTimer(int tick_microseconds)
 {
+#ifdef __IMXRT1062__
+
+  gtp1_init(tick_microseconds);
+
+#else
+
+/*
+ * Implementation strategy suggested by @tni in Teensy Forums; see
+ * https://forum.pjrc.com/threads/41504-Teensy-3-x-multithreading-library-first-release
+ */
+
   // lowest priority so we don't interrupt other interrupts
   context_timer.priority(255);
   // start timer with dummy fuction
@@ -256,14 +361,18 @@ int Threads::setMicroTimer(int tick_microseconds)
     return 0;
   }
   currentUseSystick = 0; // disable Systick calls
+
   // get the PIT number [0-3] (IntervalTimer overrides IRQ_NUMBER_t op)
   int number = (IRQ_NUMBER_t)context_timer - IRQ_PIT_CH0;
   // calculate number of uint32_t per PIT; should be 4.
   // Not hard-coded in case this changes in future CPUs.
-  const int width = (PIT_TFLG1 - PIT_TFLG0) / 4;
+  const int width = (PIT_TFLG1 - PIT_TFLG0) / sizeof(uint32_t);
   // get the right flag to ackowledge PIT interrupt
   context_timer_flag = &PIT_TFLG0 + (width * number);
   attachInterruptVector(context_timer, context_switch_pit_isr);
+
+#endif
+
   return 1;
 }
 
