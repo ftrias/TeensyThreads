@@ -155,11 +155,13 @@ bool gtp1_init(unsigned int microseconds)
   if (gpt_number == 0) {
     if (! NVIC_IS_ENABLED(IRQ_GPT1)) {
       attachInterruptVector(IRQ_GPT1, &gpt1_isr);
+      NVIC_SET_PRIORITY(IRQ_GPT1, 255);
       NVIC_ENABLE_IRQ(IRQ_GPT1);
       gpt_number = 1;
     }
     else if (! NVIC_IS_ENABLED(IRQ_GPT2)) {
       attachInterruptVector(IRQ_GPT2, &gpt2_isr);
+      NVIC_SET_PRIORITY(IRQ_GPT2, 255);
       NVIC_ENABLE_IRQ(IRQ_GPT2);
       gpt_number = 2;
     }
