@@ -71,6 +71,11 @@
 
 #include <stdint.h>
 
+/* Enabling debugging information allows access to:
+ *   getCyclesUsed()
+ */
+// #define DEBUG
+
 extern "C" {
   void context_switch(void);
   void context_switch_direct(void);
@@ -152,6 +157,10 @@ class ThreadInfo {
     int priority = 0;
     void *sp;
     int ticks;
+#ifdef DEBUG
+    unsigned long cyclesStart;  // On T_4 the CycCnt is always active - on T_3.x it currently is not - unless Audio starts it AFAIK
+    unsigned long cyclesAccum;
+#endif
 };
 
 extern "C" void unused_isr(void);
@@ -258,6 +267,9 @@ public:
   int id();
   int getStackUsed(int id);
   int getStackRemaining(int id);
+#ifdef DEBUG
+  unsigned long getCyclesUsed(int id);
+#endif
 
   // Give a thread running priority so that it will run on the next context switch for
   // 'ticks' number of slices; used internally by locking mechanism

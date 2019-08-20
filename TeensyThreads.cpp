@@ -43,12 +43,12 @@ unsigned int time_end;
 // They are copies or pointers to data in Threads and ThreadInfo
 // and put here seperately in order to simplify the code.
 extern "C" {
-  int currentUseSystick;
-  int currentActive;
+  int currentUseSystick;      // using Systick vs PIT/GPT
+  int currentActive;          // state of the system (first, start, stop)
   int currentCount;
-  ThreadInfo *currentThread;
+  ThreadInfo *currentThread;  // the thread currently running
   void *currentSave;
-  int currentMSP;
+  int currentMSP;             // Stack pointers to save
   void *currentSP;
   void loadNextThread() {
     threads.getNextThread();
@@ -277,8 +277,15 @@ int Threads::stop() {
  * This will also set the context_switcher() state variables
  */
 void Threads::getNextThread() {
+
+#ifdef DEBUG
+  // Keep track of the number of cycles expended by each thread.
+  // See @dfragster: https://forum.pjrc.com/threads/41504-Teensy-3-x-multithreading-library-first-release?p=213086#post213086
+  currentThread->cyclesAccum += ARM_DWT_CYCCNT - currentThread->cyclesStart;
+#endif
+
   // First, save the currentSP set by context_switch
-  threadp[current_thread]->sp = currentSP;
+  currentThread->sp = currentSP;
 
   // did we overflow the stack (don't check thread 0)?
   // allow an extra 8 bytes for a call to the ISR and one additional call or variable
@@ -294,7 +301,7 @@ void Threads::getNextThread() {
         if (threadp[i]->priority) {
           current_thread = i;
           priority_thread = i;
-          currentCount = threadp[i]->ticks; // .priority
+          currentCount = threadp[i]->ticks; // priority
           threadp[i]->priority = 0;
           break;
         }
@@ -320,6 +327,10 @@ void Threads::getNextThread() {
   currentSave = &threadp[current_thread]->save;
   currentMSP = (current_thread==0?1:0);
   currentSP = threadp[current_thread]->sp;
+
+#ifdef DEBUG
+  currentThread->cyclesStart = ARM_DWT_CYCCNT;
+#endif
 }
 
 /*
@@ -491,6 +502,12 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
       tp->flags = RUNNING;
       tp->save.lr = 0xFFFFFFF9;
       tp->priority = 0;
+
+#ifdef DEBUG
+      tp->cyclesStart = ARM_DWT_CYCCNT;
+      tp->cyclesAccum = 0;
+#endif
+
       currentActive = old_state;
       thread_count++;
       if (old_state == STARTED || old_state == FIRST_RUN) start();
@@ -593,6 +610,15 @@ int Threads::getStackUsed(int id) {
 int Threads::getStackRemaining(int id) {
   return (uint8_t*)threadp[id]->sp - threadp[id]->stack;
 }
+
+#ifdef DEBUG
+unsigned long Threads::getCyclesUsed(int id) {
+  stop();
+  unsigned long ret = threadp[id]->cyclesAccum;
+  start();
+  return ret;
+}
+#endif
 
 /*
  * On creation, stop threading and save state
