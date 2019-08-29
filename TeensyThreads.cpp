@@ -242,6 +242,13 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   if (save_systick_isr == unused_isr) save_systick_isr = 0;
   _VectorsRam[15] = threads_systick_isr;
 
+#ifdef DEBUG
+#if defined(__MK20DX256__) || defined(__MK20DX128__)
+  ARM_DEMCR |= ARM_DEMCR_TRCENA; // Assure Cycle Counter active
+  ARM_DWT_CTRL |= ARM_DWT_CTRL_CYCCNTENA;
+#endif
+#endif
+
 #endif
 }
 
@@ -293,35 +300,16 @@ void Threads::getNextThread() {
     stack_overflow_isr();
   }
 
-  // Find any priority threads
-  int priority_thread = -1;
-  for(int i=0; i < MAX_THREADS; i++) {
-    if (threadp[i]) { // initialized thread?
-      if (threadp[current_thread]->flags == RUNNING) { // is it running?
-        if (threadp[i]->priority) {
-          current_thread = i;
-          priority_thread = i;
-          currentCount = threadp[i]->ticks; // priority
-          threadp[i]->priority = 0;
-          break;
-        }
-      }
+  // Find the next running thread
+  while(1) {
+    current_thread++;
+    if (current_thread >= MAX_THREADS) {
+      current_thread = 0; // thread 0 is MSP; always active so return
+      break;
     }
+    if (threadp[current_thread] && threadp[current_thread]->flags == RUNNING) break;
   }
-
-  // If no priority threads, find next active one
-  if (priority_thread == -1) {
-    // Find the next running thread
-    while(1) {
-      current_thread++;
-      if (current_thread >= MAX_THREADS) {
-        current_thread = 0; // thread 0 is MSP; always active so return
-        break;
-      }
-      if (threadp[current_thread] && threadp[current_thread]->flags == RUNNING) break;
-    }
-    currentCount = threadp[current_thread]->ticks;
-  }
+  currentCount = threadp[current_thread]->ticks;
 
   currentThread = threadp[current_thread];
   currentSave = &threadp[current_thread]->save;
@@ -501,7 +489,6 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
       tp->ticks = DEFAULT_TICKS;
       tp->flags = RUNNING;
       tp->save.lr = 0xFFFFFFF9;
-      tp->priority = 0;
 
 #ifdef DEBUG
       tp->cyclesStart = ARM_DWT_CYCCNT;
@@ -572,12 +559,6 @@ void Threads::setDefaultTimeSlice(unsigned int ticks)
   DEFAULT_TICKS = ticks - 1;
 }
 
-void Threads::setPriority(int id, int level)
-{
-  if (id == -1) id = current_thread;
-  threadp[id]->priority = level;
-}
-
 void Threads::setDefaultStackSize(unsigned int bytes_size)
 {
   DEFAULT_STACK_SIZE = bytes_size;
@@ -607,6 +588,7 @@ int Threads::id() {
 int Threads::getStackUsed(int id) {
   return threadp[id]->stack + threadp[id]->stack_size - (uint8_t*)threadp[id]->sp;
 }
+
 int Threads::getStackRemaining(int id) {
   return (uint8_t*)threadp[id]->sp - threadp[id]->stack;
 }
@@ -682,7 +664,6 @@ int __attribute__ ((noinline)) Threads::Mutex::unlock() {
   if (state==1) {
     state = 0;
     if (waitthread >= 0) { // reanimate a suspended thread waiting for unlock
-      threads.setPriority(waitthread, waitcount);
       threads.restart(waitthread);
       waitthread = -1;
       __flush_cpu();

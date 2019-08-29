@@ -154,7 +154,6 @@ class ThreadInfo {
     int my_stack = 0;
     software_stack_t save;
     volatile int flags = 0;
-    int priority = 0;
     void *sp;
     int ticks;
 #ifdef DEBUG
@@ -270,10 +269,6 @@ public:
 #ifdef DEBUG
   unsigned long getCyclesUsed(int id);
 #endif
-
-  // Give a thread running priority so that it will run on the next context switch for
-  // 'ticks' number of slices; used internally by locking mechanism
-  void setPriority(int id, int ticks);
 
   // Yield current thread's remaining time slice to the next thread, causing immediate
   // context switch
