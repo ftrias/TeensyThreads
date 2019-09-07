@@ -25,7 +25,7 @@
 #include "TeensyThreads.h"
 #include <Arduino.h>
 
-#if defined(__MK20DX256__) || defined(__MK20DX128__)
+#ifndef __IMXRT1062__
 
 #include <IntervalTimer.h>
 IntervalTimer context_timer;
@@ -244,7 +244,7 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
 
 #ifdef DEBUG
 #if defined(__MK20DX256__) || defined(__MK20DX128__)
-  ARM_DEMCR |= ARM_DEMCR_TRCENA; // Assure Cycle Counter active
+  ARM_DEMCR |= ARM_DEMCR_TRCENA; // Make ssure Cycle Counter active
   ARM_DWT_CTRL |= ARM_DWT_CTRL_CYCCNTENA;
 #endif
 #endif
