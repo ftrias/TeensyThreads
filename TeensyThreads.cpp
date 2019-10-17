@@ -134,11 +134,13 @@ extern "C" void unused_interrupt_vector(void);
 
 static void __attribute((naked, noinline)) gpt1_isr() {
   GPT1_SR |= GPT_SR_OF1;  // clear set bit
+  __asm volatile ("dsb");
   __asm volatile("b context_switch");
 }
 
 static void __attribute((naked, noinline)) gpt2_isr() {
   GPT2_SR |= GPT_SR_OF1;  // clear set bit
+  __asm volatile ("dsb");
   __asm volatile("b context_switch");
 }
 
