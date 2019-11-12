@@ -175,7 +175,7 @@ bool gtp1_init(unsigned int microseconds)
 
   switch (gpt_number) {
     case 1:
-      CCM_CCGR1 |= CCM_CCGR1_GPT(CCM_CCGR_ON) ;  // enable GPT1 module
+      CCM_CCGR1 |= CCM_CCGR1_GPT1_BUS(CCM_CCGR_ON) ;  // enable GPT1 module
       GPT1_CR = 0;                   // disable timer
       GPT1_PR = 23;                  // prescale: divide by 24 so 1 tick = 1 microsecond at 24MHz
       GPT1_OCR1 = microseconds - 1;  // compare value
@@ -184,7 +184,7 @@ bool gtp1_init(unsigned int microseconds)
       GPT1_CR = GPT_CR_EN | GPT_CR_CLKSRC(1) ; // set to peripheral clock (24MHz)
       break;
     case 2:
-      CCM_CCGR1 |= CCM_CCGR1_GPT(CCM_CCGR_ON) ;  // enable GPT1 module
+      CCM_CCGR1 |= CCM_CCGR1_GPT1_BUS(CCM_CCGR_ON) ;  // enable GPT1 module
       GPT2_CR = 0;                   // disable timer
       GPT2_PR = 23;                  // prescale: divide by 24 so 1 tick = 1 microsecond at 24MHz
       GPT2_OCR1 = microseconds - 1;  // compare value
