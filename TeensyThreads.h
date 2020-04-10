@@ -164,6 +164,9 @@ class ThreadInfo {
 
 extern "C" void unused_isr(void);
 
+//added
+extern "C" int enter_sleep(int ms);
+
 typedef void (*ThreadFunction)(void*);
 typedef void (*ThreadFunctionInt)(int);
 typedef void (*ThreadFunctionNone)();
@@ -184,6 +187,17 @@ public:
   int DEFAULT_TICKS = 10;
   static const int DEFAULT_TICK_MICROSECONDS = 100;
 
+  //ADDED, per task sleep time info
+  struct scheduler_info{
+	  volatile int sleep_time_till_end_tick;
+  } task_info[MAX_THREADS];
+  //ADDED, total time to spend asleep
+  volatile int substractor = 0;
+  //ADDED, please run in infinite loop
+  void idle();
+  //ADDED, put mcu in sleep till next execution. doesn't work with delay
+  void sleep(int ms);
+  
   // State of threading system
   static const int STARTED = 1;
   static const int STOPPED = 2;
@@ -275,7 +289,7 @@ public:
   void yield();
   // Wait for milliseconds using yield(), giving other slices your wait time
   void delay(int millisecond);
-
+  
   // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
   // can pass the previous state to restore
   int start(int old_state = -1);
