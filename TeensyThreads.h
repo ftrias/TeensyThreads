@@ -286,9 +286,9 @@ public:
 
   // Yield current thread's remaining time slice to the next thread, causing immediate
   // context switch
-  void yield();
+  static void yield();
   // Wait for milliseconds using yield(), giving other slices your wait time
-  void delay(int millisecond);
+  static void delay(int millisecond);
   
   // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
   // can pass the previous state to restore
