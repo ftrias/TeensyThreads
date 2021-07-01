@@ -297,6 +297,8 @@ public:
   void yield();
   // Wait for milliseconds using yield(), giving other slices your wait time
   void delay(int millisecond);
+  // Wait for microseconds using yield(), giving other slices your wait time
+  void delay_us(int microsecond);
 
   // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
   // can pass the previous state to restore
