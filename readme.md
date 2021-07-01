@@ -98,6 +98,7 @@ int setSliceMillis(int milliseconds) | Set each time slice to be 'milliseconds' 
 int setSliceMicros(int microseconds) | Set each time slice to be 'microseconds' long
 void yield() | Yield current thread's remaining time slice to the next thread, causing immedidate context switch
 void delay(int millisecond) | Wait for milliseconds using yield(), giving other slices your wait time
+void delay_us(int microsecond) | Wait for microsecs using yield(), giving other slices your wait time
 int start(int new_state = -1) | Start/restart threading system; returns previous state. Optionally pass STARTED, STOPPED, FIRST_RUN to restore a different state.
 int stop() | Stop threading system; returns previous state: STARTED, STOPPED, FIRST_RUN     
 **Advanced functions** |
