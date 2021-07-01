@@ -76,7 +76,8 @@
  */
 // #define DEBUG
 
-extern "C" {
+extern "C"
+{
   void context_switch(void);
   void context_switch_direct(void);
   void context_switch_pit_isr(void);
@@ -87,7 +88,8 @@ extern "C" {
 }
 
 // The stack frame saved by the interrupt
-typedef struct {
+typedef struct
+{
   uint32_t r0;
   uint32_t r1;
   uint32_t r2;
@@ -99,7 +101,8 @@ typedef struct {
 } interrupt_stack_t;
 
 // The stack frame saved by the context switch
-typedef struct {
+typedef struct
+{
   uint32_t r4;
   uint32_t r5;
   uint32_t r6;
@@ -147,18 +150,19 @@ typedef struct {
 } software_stack_t;
 
 // The state of each thread (including thread 0)
-class ThreadInfo {
-  public:
-    int stack_size;
-    uint8_t *stack=0;
-    int my_stack = 0;
-    software_stack_t save;
-    volatile int flags = 0;
-    void *sp;
-    int ticks;
+class ThreadInfo
+{
+public:
+  int stack_size;
+  uint8_t *stack = 0;
+  int my_stack = 0;
+  software_stack_t save;
+  volatile int flags = 0;
+  void *sp;
+  int ticks;
 #ifdef DEBUG
-    unsigned long cyclesStart;  // On T_4 the CycCnt is always active - on T_3.x it currently is not - unless Audio starts it AFAIK
-    unsigned long cyclesAccum;
+  unsigned long cyclesStart; // On T_4 the CycCnt is always active - on T_3.x it currently is not - unless Audio starts it AFAIK
+  unsigned long cyclesAccum;
 #endif
 };
 
@@ -167,7 +171,7 @@ extern "C" void unused_isr(void);
 //added
 extern "C" int enter_sleep(int ms);
 
-typedef void (*ThreadFunction)(void*);
+typedef void (*ThreadFunction)(void *);
 typedef void (*ThreadFunctionInt)(int);
 typedef void (*ThreadFunctionNone)();
 
@@ -177,7 +181,8 @@ typedef void (*IsrFunction)();
  * Threads handles all the threading interaction with users. It gets
  * instantiated in a global variable "threads".
  */
-class Threads {
+class Threads
+{
 public:
   // The maximum number of threads is hard-coded to simplify
   // the implementation. See notes of ThreadInfo.
@@ -188,8 +193,9 @@ public:
   static const int DEFAULT_TICK_MICROSECONDS = 100;
 
   //ADDED, per task sleep time info
-  struct scheduler_info{
-	  volatile int sleep_time_till_end_tick;
+  struct scheduler_info
+  {
+    volatile int sleep_time_till_end_tick;
   } task_info[MAX_THREADS];
   //ADDED, total time to spend asleep
   volatile int substractor = 0;
@@ -197,7 +203,7 @@ public:
   void idle();
   //ADDED, put mcu in sleep till next execution. doesn't work with delay
   void sleep(int ms);
-  
+
   // State of threading system
   static const int STARTED = 1;
   static const int STOPPED = 2;
@@ -239,14 +245,16 @@ public:
 
   // Create a new thread for function "p", passing argument "arg". If stack is 0,
   // stack allocated on heap. Function "p" has form "void p(void *)".
-  int addThread(ThreadFunction p, void * arg=0, int stack_size=-1, void *stack=0);
+  int addThread(ThreadFunction p, void *arg = 0, int stack_size = -1, void *stack = 0);
   // For: void f(int)
-  int addThread(ThreadFunctionInt p, int arg=0, int stack_size=-1, void *stack=0) {
-    return addThread((ThreadFunction)p, (void*)arg, stack_size, stack);
+  int addThread(ThreadFunctionInt p, int arg = 0, int stack_size = -1, void *stack = 0)
+  {
+    return addThread((ThreadFunction)p, (void *)arg, stack_size, stack);
   }
   // For: void f()
-  int addThread(ThreadFunctionNone p, int arg=0, int stack_size=-1, void *stack=0) {
-    return addThread((ThreadFunction)p, (void*)arg, stack_size, stack);
+  int addThread(ThreadFunctionNone p, int arg = 0, int stack_size = -1, void *stack = 0)
+  {
+    return addThread((ThreadFunction)p, (void *)arg, stack_size, stack);
   }
 
   // Get the state; see class constants. Can be EMPTY, RUNNING, etc.
@@ -289,7 +297,7 @@ public:
   void yield();
   // Wait for milliseconds using yield(), giving other slices your wait time
   void delay(int millisecond);
-  
+
   // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
   // can pass the previous state to restore
   int start(int old_state = -1);
@@ -307,7 +315,7 @@ public:
 
 protected:
   void getNextThread();
-  void *loadstack(ThreadFunction p, void * arg, void *stackaddr, int stack_size);
+  void *loadstack(ThreadFunction p, void *arg, void *stackaddr, int stack_size);
   static void force_switch_isr();
 
 private:
@@ -315,61 +323,80 @@ private:
   void yield_and_start();
 
 public:
-  class Mutex {
+  class Mutex
+  {
   private:
     volatile int state = 0;
     volatile int waitthread = -1;
     volatile int waitcount = 0;
+
   public:
-    int getState(); // get the lock state; 1=locked; 0=unlocked
+    int getState();                        // get the lock state; 1=locked; 0=unlocked
     int lock(unsigned int timeout_ms = 0); // lock, optionally waiting up to timeout_ms milliseconds
-    int try_lock(); // if lock available, get it and return 1; otherwise return 0
-    int unlock();   // unlock if locked
+    int try_lock();                        // if lock available, get it and return 1; otherwise return 0
+    int unlock();                          // unlock if locked
   };
 
-  class Scope {
+  class Scope
+  {
   private:
     Mutex *r;
+
   public:
-    Scope(Mutex& m) { r = &m; r->lock(); }
+    Scope(Mutex &m)
+    {
+      r = &m;
+      r->lock();
+    }
     ~Scope() { r->unlock(); }
   };
 
-  class Suspend {
+  class Suspend
+  {
   private:
     int save_state;
+
   public:
-    Suspend();      // Stop threads and save thread state
-    ~Suspend();     // Restore saved state
+    Suspend();  // Stop threads and save thread state
+    ~Suspend(); // Restore saved state
   };
 
-  template <class C> class GrabTemp {
-    private:
-      Mutex *lkp;
-    public:
-      C *me;
-      GrabTemp(C *obj, Mutex *lk) { me = obj; lkp=lk; lkp->lock(); }
-      ~GrabTemp() { lkp->unlock(); }
-      C &get() { return *me; }
+  template <class C>
+  class GrabTemp
+  {
+  private:
+    Mutex *lkp;
+
+  public:
+    C *me;
+    GrabTemp(C *obj, Mutex *lk)
+    {
+      me = obj;
+      lkp = lk;
+      lkp->lock();
+    }
+    ~GrabTemp() { lkp->unlock(); }
+    C &get() { return *me; }
   };
 
-  template <class T> class Grab {
-    private:
-      Mutex lk;
-      T *me;
-    public:
-      Grab(T &t) { me = &t; }
-      GrabTemp<T> grab() { return GrabTemp<T>(me, &lk); }
-      operator T&() { return grab().get(); }
-      T *operator->() { return grab().me; }
-      Mutex &getLock() { return lk; }
+  template <class T>
+  class Grab
+  {
+  private:
+    Mutex lk;
+    T *me;
+
+  public:
+    Grab(T &t) { me = &t; }
+    GrabTemp<T> grab() { return GrabTemp<T>(me, &lk); }
+    operator T &() { return grab().get(); }
+    T *operator->() { return grab().me; }
+    Mutex &getLock() { return lk; }
   };
 
 #define ThreadWrap(OLDOBJ, NEWOBJ) Threads::Grab<decltype(OLDOBJ)> NEWOBJ(OLDOBJ);
 #define ThreadClone(NEWOBJ) (NEWOBJ.grab().get())
-
 };
-
 
 extern Threads threads;
 
@@ -386,26 +413,32 @@ extern Threads threads;
  * }
  *
  */
-namespace std {
-  class thread {
+namespace std
+{
+  class thread
+  {
   private:
-    int id;          // internal thread id
-    int destroy;     // flag to kill thread on instance destruction
+    int id;      // internal thread id
+    int destroy; // flag to kill thread on instance destruction
   public:
     // By casting all (args...) to (void*), if there are more than one args, the compiler
     // will fail to find a matching function. This fancy template just allows any kind of
     // function to match.
-    template <class F, class ...Args> explicit thread(F&& f, Args&&... args) {
-      id = threads.addThread((ThreadFunction)f, (void*)args...);
+    template <class F, class... Args>
+    explicit thread(F &&f, Args &&...args)
+    {
+      id = threads.addThread((ThreadFunction)f, (void *)args...);
       destroy = 1;
     }
     // If thread has not been detached when destructor called, then thread must end
-    ~thread() {
-      if (destroy) threads.kill(id);
+    ~thread()
+    {
+      if (destroy)
+        threads.kill(id);
     }
     // Threads are joinable until detached per definition, but in this implementation
     // that's not so. We emulate expected behavior anyway.
-    bool joinable() { return destroy==1; }
+    bool joinable() { return destroy == 1; }
     // Once detach() is called, thread runs until it terminates; otherwise it terminates
     // when destructor called.
     void detach() { destroy = 0; }
@@ -417,21 +450,30 @@ namespace std {
     int get_id() { return id; }
   };
 
-  class mutex {
-    private:
-      Threads::Mutex mx;
-    public:
-      void lock() { mx.lock(); }
-      bool try_lock() { return mx.try_lock(); }
-      void unlock() { mx.unlock(); }
+  class mutex
+  {
+  private:
+    Threads::Mutex mx;
+
+  public:
+    void lock() { mx.lock(); }
+    bool try_lock() { return mx.try_lock(); }
+    void unlock() { mx.unlock(); }
   };
 
-  template <class cMutex> class lock_guard {
-    private:
-      cMutex *r;
-    public:
-      explicit lock_guard(cMutex& m) { r = &m; r->lock(); }
-      ~lock_guard() { r->unlock(); }
+  template <class cMutex>
+  class lock_guard
+  {
+  private:
+    cMutex *r;
+
+  public:
+    explicit lock_guard(cMutex &m)
+    {
+      r = &m;
+      r->lock();
+    }
+    ~lock_guard() { r->unlock(); }
   };
 }
 

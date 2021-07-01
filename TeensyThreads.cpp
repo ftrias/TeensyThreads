@@ -42,25 +42,28 @@ unsigned int time_end;
 // These variables are used by the assembly context_switch() function.
 // They are copies or pointers to data in Threads and ThreadInfo
 // and put here seperately in order to simplify the code.
-extern "C" {
-  int currentUseSystick;      // using Systick vs PIT/GPT
-  int currentActive;          // state of the system (first, start, stop)
+extern "C"
+{
+  int currentUseSystick; // using Systick vs PIT/GPT
+  int currentActive;     // state of the system (first, start, stop)
   int currentCount;
-  ThreadInfo *currentThread;  // the thread currently running
+  ThreadInfo *currentThread; // the thread currently running
   void *currentSave;
-  int currentMSP;             // Stack pointers to save
+  int currentMSP; // Stack pointers to save
   void *currentSP;
-  void loadNextThread() {
+  void loadNextThread()
+  {
     threads.getNextThread();
   }
 }
 
-extern "C" void stack_overflow_default_isr() { 
+extern "C" void stack_overflow_default_isr()
+{
   currentThread->flags = Threads::ENDED;
 }
-extern "C" void stack_overflow_isr(void)       __attribute__ ((weak, alias("stack_overflow_default_isr")));
+extern "C" void stack_overflow_isr(void) __attribute__((weak, alias("stack_overflow_default_isr")));
 
-extern unsigned long _estack;   // the main thread 0 stack
+extern unsigned long _estack; // the main thread 0 stack
 
 // static void threads_svcall_isr(void);
 // static void threads_systick_isr(void);
@@ -82,14 +85,16 @@ extern volatile uint32_t systick_millis_count;
 extern "C" void systick_isr();
 void __attribute((naked, noinline)) threads_systick_isr(void)
 {
-  if (Threads::save_systick_isr) {
+  if (Threads::save_systick_isr)
+  {
     asm volatile("push {r0-r4,lr}");
     (*Threads::save_systick_isr)();
     asm volatile("pop {r0-r4,lr}");
   }
 
   // TODO: Teensyduino 1.38 calls MillisTimer::runFromTimer() from SysTick
-  if (currentUseSystick) {
+  if (currentUseSystick)
+  {
     // we branch in order to preserve LR and the stack
     __asm volatile("b context_switch");
   }
@@ -98,7 +103,8 @@ void __attribute((naked, noinline)) threads_systick_isr(void)
 
 void __attribute((naked, noinline)) threads_svcall_isr(void)
 {
-  if (Threads::save_svcall_isr) {
+  if (Threads::save_svcall_isr)
+  {
     asm volatile("push {r0-r4,lr}");
     (*Threads::save_svcall_isr)();
     asm volatile("pop {r0-r4,lr}");
@@ -111,11 +117,13 @@ void __attribute((naked, noinline)) threads_svcall_isr(void)
                  "MRSEQ r0, msp \n"
                  "MRSNE r0, psp \n");
   register unsigned int *rsp __asm("r0");
-  unsigned int svc = ((uint8_t*)rsp[6])[-2];
-  if (svc == Threads::SVC_NUMBER) {
+  unsigned int svc = ((uint8_t *)rsp[6])[-2];
+  if (svc == Threads::SVC_NUMBER)
+  {
     __asm volatile("b context_switch_direct");
   }
-  else if (svc == Threads::SVC_NUMBER_ACTIVE) {
+  else if (svc == Threads::SVC_NUMBER_ACTIVE)
+  {
     currentActive = Threads::STARTED;
     __asm volatile("b context_switch_direct_active");
   }
@@ -132,15 +140,17 @@ void __attribute((naked, noinline)) threads_svcall_isr(void)
 
 extern "C" void unused_interrupt_vector(void);
 
-static void __attribute((naked, noinline)) gpt1_isr() {
-  GPT1_SR |= GPT_SR_OF1;  // clear set bit
-  __asm volatile ("dsb"); // see github bug #20 by manitou48
+static void __attribute((naked, noinline)) gpt1_isr()
+{
+  GPT1_SR |= GPT_SR_OF1; // clear set bit
+  __asm volatile("dsb"); // see github bug #20 by manitou48
   __asm volatile("b context_switch");
 }
 
-static void __attribute((naked, noinline)) gpt2_isr() {
-  GPT2_SR |= GPT_SR_OF1;  // clear set bit
-  __asm volatile ("dsb"); // see github bug #20 by manitou48
+static void __attribute((naked, noinline)) gpt2_isr()
+{
+  GPT2_SR |= GPT_SR_OF1; // clear set bit
+  __asm volatile("dsb"); // see github bug #20 by manitou48
   __asm volatile("b context_switch");
 }
 
@@ -154,46 +164,51 @@ bool gtp1_init(unsigned int microseconds)
   static int gpt_number = 0;
 
   // not configured yet, so find an inactive GPT timer
-  if (gpt_number == 0) {
-    if (! NVIC_IS_ENABLED(IRQ_GPT1)) {
+  if (gpt_number == 0)
+  {
+    if (!NVIC_IS_ENABLED(IRQ_GPT1))
+    {
       attachInterruptVector(IRQ_GPT1, &gpt1_isr);
       NVIC_SET_PRIORITY(IRQ_GPT1, 255);
       NVIC_ENABLE_IRQ(IRQ_GPT1);
       gpt_number = 1;
     }
-    else if (! NVIC_IS_ENABLED(IRQ_GPT2)) {
+    else if (!NVIC_IS_ENABLED(IRQ_GPT2))
+    {
       attachInterruptVector(IRQ_GPT2, &gpt2_isr);
       NVIC_SET_PRIORITY(IRQ_GPT2, 255);
       NVIC_ENABLE_IRQ(IRQ_GPT2);
       gpt_number = 2;
     }
-    else {
+    else
+    {
       // if neither timer is free, we fail
       return false;
     }
   }
 
-  switch (gpt_number) {
-    case 1:
-      CCM_CCGR1 |= CCM_CCGR1_GPT1_BUS(CCM_CCGR_ON) ;  // enable GPT1 module
-      GPT1_CR = 0;                   // disable timer
-      GPT1_PR = 23;                  // prescale: divide by 24 so 1 tick = 1 microsecond at 24MHz
-      GPT1_OCR1 = microseconds - 1;  // compare value
-      GPT1_SR = 0x3F;                // clear all prior status
-      GPT1_IR = GPT_IR_OF1IE;        // use first timer
-      GPT1_CR = GPT_CR_EN | GPT_CR_CLKSRC(1) ; // set to peripheral clock (24MHz)
-      break;
-    case 2:
-      CCM_CCGR1 |= CCM_CCGR1_GPT1_BUS(CCM_CCGR_ON) ;  // enable GPT1 module
-      GPT2_CR = 0;                   // disable timer
-      GPT2_PR = 23;                  // prescale: divide by 24 so 1 tick = 1 microsecond at 24MHz
-      GPT2_OCR1 = microseconds - 1;  // compare value
-      GPT2_SR = 0x3F;                // clear all prior status
-      GPT2_IR = GPT_IR_OF1IE;        // use first timer
-      GPT2_CR = GPT_CR_EN | GPT_CR_CLKSRC(1) ; // set to peripheral clock (24MHz)
-      break;
-    default:
-      return false;
+  switch (gpt_number)
+  {
+  case 1:
+    CCM_CCGR1 |= CCM_CCGR1_GPT1_BUS(CCM_CCGR_ON); // enable GPT1 module
+    GPT1_CR = 0;                                  // disable timer
+    GPT1_PR = 23;                                 // prescale: divide by 24 so 1 tick = 1 microsecond at 24MHz
+    GPT1_OCR1 = microseconds - 1;                 // compare value
+    GPT1_SR = 0x3F;                               // clear all prior status
+    GPT1_IR = GPT_IR_OF1IE;                       // use first timer
+    GPT1_CR = GPT_CR_EN | GPT_CR_CLKSRC(1);       // set to peripheral clock (24MHz)
+    break;
+  case 2:
+    CCM_CCGR1 |= CCM_CCGR1_GPT1_BUS(CCM_CCGR_ON); // enable GPT1 module
+    GPT2_CR = 0;                                  // disable timer
+    GPT2_PR = 23;                                 // prescale: divide by 24 so 1 tick = 1 microsecond at 24MHz
+    GPT2_OCR1 = microseconds - 1;                 // compare value
+    GPT2_SR = 0x3F;                               // clear all prior status
+    GPT2_IR = GPT_IR_OF1IE;                       // use first timer
+    GPT2_CR = GPT_CR_EN | GPT_CR_CLKSRC(1);       // set to peripheral clock (24MHz)
+    break;
+  default:
+    return false;
   }
 
   return true;
@@ -201,16 +216,18 @@ bool gtp1_init(unsigned int microseconds)
 
 #endif
 
-Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
+Threads::Threads() : current_thread(0), thread_count(0), thread_error(0)
+{
   // initilize thread slots to empty
-  for(int i=0; i<MAX_THREADS; i++) {
+  for (int i = 0; i < MAX_THREADS; i++)
+  {
     threadp[i] = NULL;
   }
   // fill thread 0, which is always running
   threadp[0] = new ThreadInfo();
 
   // initialize context_switch() globals from thread 0, which is MSP and always running
-  currentThread = threadp[0];        // thread 0 is active
+  currentThread = threadp[0]; // thread 0 is active
   currentSave = &threadp[0]->save;
   currentMSP = 1;
   currentSP = 0;
@@ -218,14 +235,15 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   currentActive = FIRST_RUN;
   threadp[0]->flags = RUNNING;
   threadp[0]->ticks = DEFAULT_TICKS;
-  threadp[0]->stack = (uint8_t*)&_estack - DEFAULT_STACK0_SIZE;
+  threadp[0]->stack = (uint8_t *)&_estack - DEFAULT_STACK0_SIZE;
   threadp[0]->stack_size = DEFAULT_STACK0_SIZE;
 
 #ifdef __IMXRT1062__
 
   // commandeer SVCall & use GTP1 Interrupt
   save_svcall_isr = _VectorsRam[11];
-  if (save_svcall_isr == unused_interrupt_vector) save_svcall_isr = 0;
+  if (save_svcall_isr == unused_interrupt_vector)
+    save_svcall_isr = 0;
   _VectorsRam[11] = threads_svcall_isr;
 
   currentUseSystick = 0; // disable Systick calls
@@ -237,11 +255,13 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
 
   // commandeer the SVCall & SysTick Exceptions
   save_svcall_isr = _VectorsRam[11];
-  if (save_svcall_isr == unused_isr) save_svcall_isr = 0;
+  if (save_svcall_isr == unused_isr)
+    save_svcall_isr = 0;
   _VectorsRam[11] = threads_svcall_isr;
-  
+
   save_systick_isr = _VectorsRam[15];
-  if (save_systick_isr == unused_isr) save_systick_isr = 0;
+  if (save_systick_isr == unused_isr)
+    save_systick_isr = 0;
   _VectorsRam[15] = threads_systick_isr;
 
 #ifdef DEBUG
@@ -257,10 +277,12 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
 /*
  * start() - Begin threading
  */
-int Threads::start(int prev_state) {
+int Threads::start(int prev_state)
+{
   __disable_irq();
   int old_state = currentActive;
-  if (prev_state == -1) prev_state = STARTED;
+  if (prev_state == -1)
+    prev_state = STARTED;
   currentActive = prev_state;
   __enable_irq();
   return old_state;
@@ -272,7 +294,8 @@ int Threads::start(int prev_state) {
  * If threads have already started, this should be called sparingly
  * because it could destabalize the system if thread 0 is stopped.
  */
-int Threads::stop() {
+int Threads::stop()
+{
   __disable_irq();
   int old_state = currentActive;
   currentActive = STOPPED;
@@ -285,7 +308,8 @@ int Threads::stop() {
  *
  * This will also set the context_switcher() state variables
  */
-void Threads::getNextThread() {
+void Threads::getNextThread()
+{
 
 #ifdef DEBUG
   // Keep track of the number of cycles expended by each thread.
@@ -298,24 +322,28 @@ void Threads::getNextThread() {
 
   // did we overflow the stack (don't check thread 0)?
   // allow an extra 8 bytes for a call to the ISR and one additional call or variable
-  if (current_thread && ((uint8_t*)currentThread->sp - currentThread->stack <= 8)) {
+  if (current_thread && ((uint8_t *)currentThread->sp - currentThread->stack <= 8))
+  {
     stack_overflow_isr();
   }
 
   // Find the next running thread
-  while(1) {
+  while (1)
+  {
     current_thread++;
-    if (current_thread >= MAX_THREADS) {
+    if (current_thread >= MAX_THREADS)
+    {
       current_thread = 0; // thread 0 is MSP; always active so return
       break;
     }
-    if (threadp[current_thread] && threadp[current_thread]->flags == RUNNING) break;
+    if (threadp[current_thread] && threadp[current_thread]->flags == RUNNING)
+      break;
   }
   currentCount = threadp[current_thread]->ticks;
 
   currentThread = threadp[current_thread];
   currentSave = &threadp[current_thread]->save;
-  currentMSP = (current_thread==0?1:0);
+  currentMSP = (current_thread == 0 ? 1 : 0);
   currentSP = threadp[current_thread]->sp;
 
 #ifdef DEBUG
@@ -351,7 +379,7 @@ int Threads::setMicroTimer(int tick_microseconds)
 
 #else
 
-/*
+  /*
  * Implementation strategy suggested by @tni in Teensy Forums; see
  * https://forum.pjrc.com/threads/41504-Teensy-3-x-multithreading-library-first-release
  */
@@ -359,7 +387,8 @@ int Threads::setMicroTimer(int tick_microseconds)
   // lowest priority so we don't interrupt other interrupts
   context_timer.priority(255);
   // start timer with dummy fuction
-  if (context_timer.begin(context_pit_empty, tick_microseconds) == 0) {
+  if (context_timer.begin(context_pit_empty, tick_microseconds) == 0)
+  {
     // failed to set the timer!
     return 0;
   }
@@ -394,10 +423,12 @@ int Threads::setSliceMicros(int microseconds)
  */
 int Threads::setSliceMillis(int milliseconds)
 {
-  if (currentUseSystick) {
+  if (currentUseSystick)
+  {
     setDefaultTimeSlice(milliseconds);
   }
-  else {
+  else
+  {
     // if we're using the PIT, we should probably really disable it and
     // re-establish the systick timer; but this is easier for now
     setSliceMicros(milliseconds * 1000);
@@ -425,15 +456,16 @@ void Threads::del_process(void)
   threads.thread_count--;
   me->flags = ENDED; //clear the flags so thread can stop and be reused
   threads.start(old_state);
-  while(1); // just in case, keep working until context change when execution will not return to this thread
+  while (1)
+    ; // just in case, keep working until context change when execution will not return to this thread
 }
 
 /*
  * Initializes a thread's stack. Called when thread is created
  */
-void *Threads::loadstack(ThreadFunction p, void * arg, void *stackaddr, int stack_size)
+void *Threads::loadstack(ThreadFunction p, void *arg, void *stackaddr, int stack_size)
 {
-  interrupt_stack_t * process_frame = (interrupt_stack_t *)((uint8_t*)stackaddr + stack_size - sizeof(interrupt_stack_t) - 8);
+  interrupt_stack_t *process_frame = (interrupt_stack_t *)((uint8_t *)stackaddr + stack_size - sizeof(interrupt_stack_t) - 8);
   process_frame->r0 = (uint32_t)arg;
   process_frame->r1 = 0;
   process_frame->r2 = 0;
@@ -442,9 +474,9 @@ void *Threads::loadstack(ThreadFunction p, void * arg, void *stackaddr, int stac
   process_frame->lr = (uint32_t)Threads::del_process;
   process_frame->pc = ((uint32_t)p);
   process_frame->xpsr = 0x1000000;
-  uint8_t *ret = (uint8_t*)process_frame;
+  uint8_t *ret = (uint8_t *)process_frame;
   // ret -= sizeof(software_stack_t); // uncomment this if we are saving R4-R11 to the stack
-  return (void*)ret;
+  return (void *)ret;
 }
 
 /*
@@ -464,27 +496,34 @@ void *Threads::loadstack(ThreadFunction p, void * arg, void *stackaddr, int stac
  *           stack_size. If stack_size is 0, a default size will be used.
  *    return: an integer ID to be used for other calls
  */
-int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack)
+int Threads::addThread(ThreadFunction p, void *arg, int stack_size, void *stack)
 {
   int old_state = stop();
-  if (stack_size == -1) stack_size = DEFAULT_STACK_SIZE;
-  for (int i=1; i < MAX_THREADS; i++) {
-    if (threadp[i] == NULL) { // empty thread, so fill it
+  if (stack_size == -1)
+    stack_size = DEFAULT_STACK_SIZE;
+  for (int i = 1; i < MAX_THREADS; i++)
+  {
+    if (threadp[i] == NULL)
+    { // empty thread, so fill it
       threadp[i] = new ThreadInfo();
     }
-    if (threadp[i]->flags == ENDED || threadp[i]->flags == EMPTY) { // free thread
+    if (threadp[i]->flags == ENDED || threadp[i]->flags == EMPTY)
+    {                              // free thread
       ThreadInfo *tp = threadp[i]; // working on this thread
-      if (tp->stack && tp->my_stack) {
+      if (tp->stack && tp->my_stack)
+      {
         delete[] tp->stack;
       }
-      if (stack==0) {
+      if (stack == 0)
+      {
         stack = new uint8_t[stack_size];
         tp->my_stack = 1;
       }
-      else {
+      else
+      {
         tp->my_stack = 0;
       }
-      tp->stack = (uint8_t*)stack;
+      tp->stack = (uint8_t *)stack;
       tp->stack_size = stack_size;
       void *psp = loadstack(p, arg, tp->stack, tp->stack_size);
       tp->sp = psp;
@@ -499,11 +538,13 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
 
       currentActive = old_state;
       thread_count++;
-      if (old_state == STARTED || old_state == FIRST_RUN) start();
+      if (old_state == STARTED || old_state == FIRST_RUN)
+        start();
       return i;
     }
   }
-  if (old_state == STARTED) start();
+  if (old_state == STARTED)
+    start();
   return -1;
 }
 
@@ -524,10 +565,13 @@ int Threads::wait(int id, unsigned int timeout_ms)
   // need to store state in temp volatile memory for optimizer.
   // "while (thread[id].flags != RUNNING)" will be optimized away
   volatile int state;
-  while (1) {
-    if (timeout_ms != 0 && millis() - start > timeout_ms) return -1;
+  while (1)
+  {
+    if (timeout_ms != 0 && millis() - start > timeout_ms)
+      return -1;
     state = threadp[id]->flags;
-    if (state != RUNNING) break;
+    if (state != RUNNING)
+      break;
     yield();
   }
   return id;
@@ -566,82 +610,106 @@ void Threads::setDefaultStackSize(unsigned int bytes_size)
   DEFAULT_STACK_SIZE = bytes_size;
 }
 
-void Threads::yield() {
-  __asm volatile("svc %0" : : "i"(Threads::SVC_NUMBER));
+void Threads::yield()
+{
+  __asm volatile("svc %0"
+                 :
+                 : "i"(Threads::SVC_NUMBER));
 }
 
-void Threads::yield_and_start() {
-  __asm volatile("svc %0" : : "i"(Threads::SVC_NUMBER_ACTIVE));
+void Threads::yield_and_start()
+{
+  __asm volatile("svc %0"
+                 :
+                 : "i"(Threads::SVC_NUMBER_ACTIVE));
 }
 
-void Threads::delay(int millisecond) {
+void Threads::delay(int millisecond)
+{
   int mx = millis();
-  while((int)millis() - mx < millisecond) yield();
+  while ((int)millis() - mx < millisecond)
+    yield();
 }
 
-void Threads::idle() {
-	volatile bool needs_run[thread_count];
-	volatile int i, j;
-	volatile int task_id_ends;
-	__disable_irq();
-	task_id_ends = 0;
-	//get lowest sleep interval from sleeping tasks into task_id_ends
-	for (i = 0; i < thread_count; i++) {
-		//sort by ending time first
-		for (j = i + 1; j < thread_count; ++j) {
-			if (task_info[i].sleep_time_till_end_tick > task_info[j].sleep_time_till_end_tick) {
-				//if end time soonest
-				if (getState(i+1) == SUSPENDED) {
-					task_id_ends = j; //store next task
-				}
-			}
-		}
-	}
-	//set the sleeping time to substractor
-	substractor = task_info[task_id_ends].sleep_time_till_end_tick;
-	
-	if (substractor > 0) {
-		//if sleep is needed
-		volatile int time_spent_asleep = enter_sleep(substractor);
-		//store new data based on time spent asleep
-		for (i = 0; i < thread_count; i++) {
-			needs_run[i] = 0;
-				if (getState(i+1) == SUSPENDED) {
-				task_info[i].sleep_time_till_end_tick -= time_spent_asleep; //substract sleep time
-				//time to run?
-				if (task_info[i].sleep_time_till_end_tick <= 0) {
-					needs_run[i] = 1;
-				} else {
-					needs_run[i] = 0;
-				}
-			}
-		}
-		//for each thread when slept, resume if needed
-		for (i = 0; i < thread_count; i++) {
-			if (needs_run[i]) {
-				setState(i+1, RUNNING);
-				task_info[i].sleep_time_till_end_tick = 60000;
-			}
-		}
-	}
-	//reset substractor
-	substractor = 60000;
-	__enable_irq();
-	yield();
+void Threads::idle()
+{
+  volatile bool needs_run[thread_count];
+  volatile int i, j;
+  volatile int task_id_ends;
+  __disable_irq();
+  task_id_ends = 0;
+  //get lowest sleep interval from sleeping tasks into task_id_ends
+  for (i = 0; i < thread_count; i++)
+  {
+    //sort by ending time first
+    for (j = i + 1; j < thread_count; ++j)
+    {
+      if (task_info[i].sleep_time_till_end_tick > task_info[j].sleep_time_till_end_tick)
+      {
+        //if end time soonest
+        if (getState(i + 1) == SUSPENDED)
+        {
+          task_id_ends = j; //store next task
+        }
+      }
+    }
+  }
+  //set the sleeping time to substractor
+  substractor = task_info[task_id_ends].sleep_time_till_end_tick;
+
+  if (substractor > 0)
+  {
+    //if sleep is needed
+    volatile int time_spent_asleep = enter_sleep(substractor);
+    //store new data based on time spent asleep
+    for (i = 0; i < thread_count; i++)
+    {
+      needs_run[i] = 0;
+      if (getState(i + 1) == SUSPENDED)
+      {
+        task_info[i].sleep_time_till_end_tick -= time_spent_asleep; //substract sleep time
+        //time to run?
+        if (task_info[i].sleep_time_till_end_tick <= 0)
+        {
+          needs_run[i] = 1;
+        }
+        else
+        {
+          needs_run[i] = 0;
+        }
+      }
+    }
+    //for each thread when slept, resume if needed
+    for (i = 0; i < thread_count; i++)
+    {
+      if (needs_run[i])
+      {
+        setState(i + 1, RUNNING);
+        task_info[i].sleep_time_till_end_tick = 60000;
+      }
+    }
+  }
+  //reset substractor
+  substractor = 60000;
+  __enable_irq();
+  yield();
 }
 
-void Threads::sleep(int ms) {
-	int i = id();
-	if (getState(i) == RUNNING) {
-		__disable_irq();
-		task_info[i-1].sleep_time_till_end_tick = ms;
-		setState(i, SUSPENDED);
-		__enable_irq();
-		yield();
-	}
+void Threads::sleep(int ms)
+{
+  int i = id();
+  if (getState(i) == RUNNING)
+  {
+    __disable_irq();
+    task_info[i - 1].sleep_time_till_end_tick = ms;
+    setState(i, SUSPENDED);
+    __enable_irq();
+    yield();
+  }
 }
 
-int Threads::id() {
+int Threads::id()
+{
   volatile int ret;
   __disable_irq();
   ret = current_thread;
@@ -649,16 +717,19 @@ int Threads::id() {
   return ret;
 }
 
-int Threads::getStackUsed(int id) {
-  return threadp[id]->stack + threadp[id]->stack_size - (uint8_t*)threadp[id]->sp;
+int Threads::getStackUsed(int id)
+{
+  return threadp[id]->stack + threadp[id]->stack_size - (uint8_t *)threadp[id]->sp;
 }
 
-int Threads::getStackRemaining(int id) {
-  return (uint8_t*)threadp[id]->sp - threadp[id]->stack;
+int Threads::getStackRemaining(int id)
+{
+  return (uint8_t *)threadp[id]->sp - threadp[id]->stack;
 }
 
 #ifdef DEBUG
-unsigned long Threads::getCyclesUsed(int id) {
+unsigned long Threads::getCyclesUsed(int id)
+{
   stop();
   unsigned long ret = threadp[id]->cyclesAccum;
   start();
@@ -669,7 +740,8 @@ unsigned long Threads::getCyclesUsed(int id) {
 /*
  * On creation, stop threading and save state
  */
-Threads::Suspend::Suspend() {
+Threads::Suspend::Suspend()
+{
   __disable_irq();
   save_state = currentActive;
   currentActive = 0;
@@ -679,27 +751,35 @@ Threads::Suspend::Suspend() {
 /*
  * On destruction, restore threading state
  */
-Threads::Suspend::~Suspend() {
+Threads::Suspend::~Suspend()
+{
   __disable_irq();
   currentActive = save_state;
   __enable_irq();
 }
 
-int Threads::Mutex::getState() {
+int Threads::Mutex::getState()
+{
   int p = threads.stop();
   int ret = state;
   threads.start(p);
   return ret;
 }
 
-int __attribute__ ((noinline)) Threads::Mutex::lock(unsigned int timeout_ms) {
-  if (try_lock()) return 1; // we're good, so avoid more checks
+int __attribute__((noinline)) Threads::Mutex::lock(unsigned int timeout_ms)
+{
+  if (try_lock())
+    return 1; // we're good, so avoid more checks
 
   uint32_t start = systick_millis_count;
-  while (1) {
-    if (try_lock()) return 1;
-    if (timeout_ms && (systick_millis_count - start > timeout_ms)) return 0;
-    if (waitthread==-1) { // can hold 1 thread suspend until unlock
+  while (1)
+  {
+    if (try_lock())
+      return 1;
+    if (timeout_ms && (systick_millis_count - start > timeout_ms))
+      return 0;
+    if (waitthread == -1)
+    { // can hold 1 thread suspend until unlock
       int p = threads.stop();
       waitthread = threads.current_thread;
       waitcount = currentCount;
@@ -712,9 +792,11 @@ int __attribute__ ((noinline)) Threads::Mutex::lock(unsigned int timeout_ms) {
   return 0;
 }
 
-int Threads::Mutex::try_lock() {
+int Threads::Mutex::try_lock()
+{
   int p = threads.stop();
-  if (state == 0) {
+  if (state == 0)
+  {
     state = 1;
     threads.start(p);
     return 1;
@@ -723,11 +805,14 @@ int Threads::Mutex::try_lock() {
   return 0;
 }
 
-int __attribute__ ((noinline)) Threads::Mutex::unlock() {
+int __attribute__((noinline)) Threads::Mutex::unlock()
+{
   int p = threads.stop();
-  if (state==1) {
+  if (state == 1)
+  {
     state = 0;
-    if (waitthread >= 0) { // reanimate a suspended thread waiting for unlock
+    if (waitthread >= 0)
+    { // reanimate a suspended thread waiting for unlock
       threads.restart(waitthread);
       waitthread = -1;
       __flush_cpu();
