@@ -290,7 +290,7 @@ public:
 
   // Yield current thread's remaining time slice to the next thread, causing immediate
   // context switch
-  void yield();
+  static void yield();
   // Wait for milliseconds using yield(), giving other slices your wait time
   void delay(int millisecond);
   // Wait for microseconds using yield(), giving other slices your wait time
