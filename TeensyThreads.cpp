@@ -24,6 +24,9 @@
  */
 #include "TeensyThreads.h"
 #include <Arduino.h>
+#include <string.h>
+
+#include "utils/debug.h"
 
 #ifndef __IMXRT1062__
 
@@ -201,6 +204,44 @@ bool gtp1_init(unsigned int microseconds)
 
 #endif
 
+/*************************************************/
+/**\name UTILITIES FUNCTIONS                     */
+/*************************************************/
+/**
+ * \brief Convert thead state to printable string
+ */
+char * _util_state_2_string(int state){
+    static char _state[Threads::UTIL_STATE_NAME_DESCRIPTION_LENGTH];
+    memset(_state, 0, sizeof(_state));
+
+    switch (state)
+    {
+    case 0:
+        sprintf(_state, "EMPTY");
+        break;
+    case 1:
+        sprintf(_state, "RUNNING");
+        break;
+    case 2:
+        sprintf(_state, "ENDED");
+        break;
+    case 3:
+        sprintf(_state, "ENDING");
+        break;
+    case 4:
+        sprintf(_state, "SUSPENDED");
+        break;
+    default:
+        sprintf(_state, "%d", state);
+        break;
+    }
+    
+    return _state;
+}
+
+/*************************************************/
+/**\name CLASS THREAD                            */
+/*************************************************/
 Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   // initilize thread slots to empty
   for(int i=0; i<MAX_THREADS; i++) {
@@ -660,6 +701,35 @@ int Threads::getStackUsed(int id) {
 
 int Threads::getStackRemaining(int id) {
   return (uint8_t*)threadp[id]->sp - threadp[id]->stack;
+}
+
+char *Threads::threadsInfo(void)
+{
+  static char _buffer[Threads::UTIL_TRHEADS_BUFFER_LENGTH];
+  uint _buffer_cursor = 0;
+  _buffer_cursor = sprintf(_buffer, "_____\n");
+  for (int each_thread = 0; each_thread < thread_count; each_thread++)
+  {
+    if (threadp[each_thread] != NULL)
+    {
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "%d:", each_thread);
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "Stack size:%d|",
+                                threadp[each_thread]->stack_size);
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "Used:%d|Remains:%d|",
+                                getStackUsed(each_thread),
+                                getStackRemaining(each_thread));
+      char *_thread_state = _util_state_2_string(threadp[each_thread]->flags);
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "State:%s|",
+                                _thread_state);
+#ifdef DEBUG
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "cycles:%lu\n",
+                                threadp[each_thread]->cyclesAccum);
+#else
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "\n");
+#endif
+    }
+  }
+  return _buffer;
 }
 
 #ifdef DEBUG

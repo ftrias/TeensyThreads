@@ -186,6 +186,9 @@ public:
   const int DEFAULT_STACK0_SIZE = 10240; // estimate for thread 0?
   int DEFAULT_TICKS = 10;
   static const int DEFAULT_TICK_MICROSECONDS = 100;
+  static const int UTIL_STATE_NAME_DESCRIPTION_LENGTH = 24;
+  static const int UTIL_TRHEADS_BUFFER_LENGTH = 1024;
+
 
   //ADDED, per task sleep time info
   struct scheduler_info{
@@ -280,6 +283,7 @@ public:
   int id();
   int getStackUsed(int id);
   int getStackRemaining(int id);
+  char* threadsInfo(void);
 #ifdef DEBUG
   unsigned long getCyclesUsed(int id);
 #endif
