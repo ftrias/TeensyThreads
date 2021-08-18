@@ -24,6 +24,9 @@
  */
 #include "TeensyThreads.h"
 #include <Arduino.h>
+#include <string.h>
+
+#include "utils/debug.h"
 
 #ifndef __IMXRT1062__
 
@@ -201,6 +204,60 @@ bool gtp1_init(unsigned int microseconds)
 
 #endif
 
+/*************************************************/
+/**\name UTILITIES FUNCTIONS                     */
+/*************************************************/
+/**
+ * \brief Convert thead state to printable string
+ */
+char * _util_state_2_string(int state){
+    static char _state[Threads::UTIL_STATE_NAME_DESCRIPTION_LENGTH];
+    memset(_state, 0, sizeof(_state));
+
+    switch (state)
+    {
+    case 0:
+        sprintf(_state, "EMPTY");
+        break;
+    case 1:
+        sprintf(_state, "RUNNING");
+        break;
+    case 2:
+        sprintf(_state, "ENDED");
+        break;
+    case 3:
+        sprintf(_state, "ENDING");
+        break;
+    case 4:
+        sprintf(_state, "SUSPENDED");
+        break;
+    default:
+        sprintf(_state, "%d", state);
+        break;
+    }
+    
+    return _state;
+}
+
+/**
+ * \brief Simple printf functionality on Serial
+ */
+void _printf(const char *format, ...)
+{
+    char buff[Threads::UTIL_PRINTF_BUFFER_LENGTH];
+
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buff, sizeof(buff), format, args);
+    va_end(args);
+
+    Serial.print(buff);
+    Serial.flush();
+}
+
+/*************************************************/
+/**\name CLASS THREAD                            */
+/*************************************************/
 Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   // initilize thread slots to empty
   for(int i=0; i<MAX_THREADS; i++) {
@@ -579,6 +636,11 @@ void Threads::delay(int millisecond) {
   while((int)millis() - mx < millisecond) yield();
 }
 
+void Threads::delay_us(int microsecond){
+  int mx = micros();
+  while ((int)micros() - mx < microsecond) yield();
+}
+
 void Threads::idle() {
 	volatile bool needs_run[thread_count];
 	volatile int i, j;
@@ -655,6 +717,26 @@ int Threads::getStackUsed(int id) {
 
 int Threads::getStackRemaining(int id) {
   return (uint8_t*)threadp[id]->sp - threadp[id]->stack;
+}
+
+void Threads::printThreadsInfo(void) {
+  _printf("_____\n");
+  for (int each_thread = 0; each_thread < 2; each_thread++)
+  {
+    if (threadp[each_thread] != NULL){ 
+      _printf("%d:", each_thread);
+      _printf("Stack size:%d|", threadp[each_thread]->stack_size);
+      _printf("Used:%d|Remains:%d|", 
+              getStackUsed(each_thread), getStackRemaining(each_thread));
+      char * _thread_state = _util_state_2_string(threadp[each_thread]->flags);
+      _printf("state:%s|", _thread_state);
+#ifdef DEBUG
+      _printf("cycles:%lu\n", threadp[each_thread]->cyclesAccum);
+#else
+      _printf("\n");
+#endif
+    }
+  }
 }
 
 #ifdef DEBUG
