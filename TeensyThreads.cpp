@@ -579,6 +579,11 @@ void Threads::delay(int millisecond) {
   while((int)millis() - mx < millisecond) yield();
 }
 
+void Threads::delay_us(int microsecond){
+  int mx = micros();
+  while ((int)micros() - mx < microsecond) yield();
+}
+
 void Threads::idle() {
 	volatile bool needs_run[thread_count];
 	volatile int i, j;
