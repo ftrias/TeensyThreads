@@ -74,7 +74,7 @@
 /* Enabling debugging information allows access to:
  *   getCyclesUsed()
  */
-#define DEBUG
+// #define DEBUG
 
 extern "C" {
   void context_switch(void);
@@ -187,7 +187,7 @@ public:
   int DEFAULT_TICKS = 10;
   static const int DEFAULT_TICK_MICROSECONDS = 100;
   static const int UTIL_STATE_NAME_DESCRIPTION_LENGTH = 24;
-  static const int UTIL_PRINTF_BUFFER_LENGTH = 256;
+  static const int UTIL_TRHEADS_BUFFER_LENGTH = 1024;
 
 
   //ADDED, per task sleep time info
@@ -283,7 +283,7 @@ public:
   int id();
   int getStackUsed(int id);
   int getStackRemaining(int id);
-  void printThreadsInfo(void);
+  char* threadsInfo(void);
 #ifdef DEBUG
   unsigned long getCyclesUsed(int id);
 #endif

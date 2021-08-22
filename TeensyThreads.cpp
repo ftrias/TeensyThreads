@@ -239,22 +239,6 @@ char * _util_state_2_string(int state){
     return _state;
 }
 
-/**
- * \brief Simple printf functionality on Serial
- */
-void _printf(const char *format, ...)
-{
-    char buff[Threads::UTIL_PRINTF_BUFFER_LENGTH];
-
-    va_list args;
-    va_start(args, format);
-    vsnprintf(buff, sizeof(buff), format, args);
-    va_end(args);
-
-    Serial.print(buff);
-    Serial.flush();
-}
-
 /*************************************************/
 /**\name CLASS THREAD                            */
 /*************************************************/
@@ -719,24 +703,33 @@ int Threads::getStackRemaining(int id) {
   return (uint8_t*)threadp[id]->sp - threadp[id]->stack;
 }
 
-void Threads::printThreadsInfo(void) {
-  _printf("_____\n");
-  for (int each_thread = 0; each_thread < 2; each_thread++)
+char *Threads::threadsInfo(void)
+{
+  static char _buffer[Threads::UTIL_TRHEADS_BUFFER_LENGTH];
+  uint _buffer_cursor = 0;
+  _buffer_cursor = sprintf(_buffer, "_____\n");
+  for (int each_thread = 0; each_thread < thread_count; each_thread++)
   {
-    if (threadp[each_thread] != NULL){ 
-      _printf("%d:", each_thread);
-      _printf("Stack size:%d|", threadp[each_thread]->stack_size);
-      _printf("Used:%d|Remains:%d|", 
-              getStackUsed(each_thread), getStackRemaining(each_thread));
-      char * _thread_state = _util_state_2_string(threadp[each_thread]->flags);
-      _printf("state:%s|", _thread_state);
+    if (threadp[each_thread] != NULL)
+    {
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "%d:", each_thread);
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "Stack size:%d|",
+                                threadp[each_thread]->stack_size);
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "Used:%d|Remains:%d|",
+                                getStackUsed(each_thread),
+                                getStackRemaining(each_thread));
+      char *_thread_state = _util_state_2_string(threadp[each_thread]->flags);
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "State:%s|",
+                                _thread_state);
 #ifdef DEBUG
-      _printf("cycles:%lu\n", threadp[each_thread]->cyclesAccum);
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "cycles:%lu\n",
+                                threadp[each_thread]->cyclesAccum);
 #else
-      _printf("\n");
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "\n");
 #endif
     }
   }
+  return _buffer;
 }
 
 #ifdef DEBUG
