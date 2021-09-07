@@ -56,7 +56,7 @@ First, include the library with
 ```
 
 A global variable `threads` of `class Threads` will be created and used to
-control the threading action. The library is hard-coded to support 8 threads,
+control the threading action. The library is hard-coded to support up to 16 threads,
 but this may be changed in the source code of Threads.cpp.
 
 Threads are created by `threads.addThread()` with parameters:
@@ -99,12 +99,17 @@ int setSliceMicros(int microseconds) | Set each time slice to be 'microseconds' 
 void yield() | Yield current thread's remaining time slice to the next thread, causing immedidate context switch
 void delay(int millisecond) | Wait for milliseconds using yield(), giving other slices your wait time
 int start(int new_state = -1) | Start/restart threading system; returns previous state. Optionally pass STARTED, STOPPED, FIRST_RUN to restore a different state.
-int stop() | Stop threading system; returns previous state: STARTED, STOPPED, FIRST_RUN     
+int stop() | Stop threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
 **Advanced functions** |
 void setDefaultStackSize(unsigned int bytes_size) | Set the stack size for new threads in bytes
 void setTimeSlice(int id, unsigned int ticks) | Set the slice length time in ticks for a thread (1 tick = 1 millisecond, unless using MicroTimer)
 void setDefaultTimeSlice(unsigned int ticks) |Set the slice length time in ticks for all new threads (1 tick = 1 millisecond, unless using MicroTimer)
 int setMicroTimer(int tick_microseconds = DEFAULT_TICK_MICROSECONDS) | use the microsecond timer provided by IntervalTimer & PIT; instead of 1 tick = 1 millisecond, 1 tick will be the number of microseconds provided (default is 100 microseconds)
+**Power saving** |
+void idle() | called in main loop to execute sleep, etc.
+void sleep(int ms) | suspend CPU for ms milliseconds. Must call `setSleepCallback()` first.
+void setSleepCallback(int (*)(int)) | Set sleep callback function that puts CPU to sleep
+
 
 In addition, the Threads class has a member class for mutexes (or locks):
 
@@ -123,15 +128,17 @@ Scope(Mutex& m) | On creation, mutex is locked
 ~Scope() | On descruction, it is unlocked
 
 ```C++
-  // example:
+  // example of manual locking/unlocking
   Threads::Mutex mylock;
   mylock.lock();
   x = 1;
   mylock.unlock();
+
+  // example of automatic locking/unlocking
   if (y) {
     Threads::Scope m(mylock); // lock on creation
     x = 2;
-  }                           // unlock at destruction
+  }                           // unlock at end of scope
 ```
 
 Usage notes
@@ -174,7 +181,7 @@ Locking
 
 Because the Teensy libraries are not usually thread-safe, it's best to  only use
 one library in one thread. For example, if using the Wire library, it should
-always be used in a single thread. If this cannot be avoided, then all uses
+always be used in a single thread. If this cannot be done, then all uses
 should be surrounded by locks.
 
 For example:
@@ -199,8 +206,8 @@ illustrates its use:
 
 ```C++
 // this method is experimental
-ThreadWrap(Serial, SerialX);
-#define Serial ThreadClone(SerialX)
+ThreadWrap(Serial, SerialXtra);
+#define Serial ThreadClone(SerialXtra)
 
 int thread_func()
 {
@@ -217,8 +224,8 @@ about the mechanics can be found by looking at the source code.
 Alternative std::thread interface
 -----------------------------
 
-The library also supports the construction of minimal `std::thread` as indicated
-in C++11. `std::thread` always allocates it's own stack of the default size. In
+The library also supports the construction of minimal `std::thread` as used
+in C++11. `std::thread` always allocates its own stack of the default size. In
 addition, a minimal `std::mutex` and `std::lock_guard` are also implemented.
 See http://www.cplusplus.com/reference/thread/thread/
 

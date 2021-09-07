@@ -55,6 +55,8 @@ extern "C" {
   }
 }
 
+const int overflow_stack_size = 8;
+
 extern "C" void stack_overflow_default_isr() { 
   currentThread->flags = Threads::ENDED;
 }
@@ -203,7 +205,7 @@ bool gtp1_init(unsigned int microseconds)
 
 Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   // initilize thread slots to empty
-  for(int i=0; i<MAX_THREADS; i++) {
+  for(int i=1; i<MAX_THREADS; i++) {
     threadp[i] = NULL;
   }
   // fill thread 0, which is always running
@@ -220,6 +222,7 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   threadp[0]->ticks = DEFAULT_TICKS;
   threadp[0]->stack = (uint8_t*)&_estack - DEFAULT_STACK0_SIZE;
   threadp[0]->stack_size = DEFAULT_STACK0_SIZE;
+  setStackMarker(threadp[0]->stack);
 
 #ifdef __IMXRT1062__
 
@@ -298,7 +301,7 @@ void Threads::getNextThread() {
 
   // did we overflow the stack (don't check thread 0)?
   // allow an extra 8 bytes for a call to the ISR and one additional call or variable
-  if (current_thread && ((uint8_t*)currentThread->sp - currentThread->stack <= 8)) {
+  if (current_thread && ((uint8_t*)currentThread->sp - currentThread->stack <= overflow_stack_size)) {
     stack_overflow_isr();
   }
 
@@ -429,11 +432,41 @@ void Threads::del_process(void)
 }
 
 /*
+ * Set a marker at memory so we can detect memory overruns
+ */
+
+const uint32_t thread_marker = 0xDEADDEAD;
+
+void Threads::setStackMarker(void *stack)
+{
+  uint32_t *m = (uint32_t*)stack;
+  *m = thread_marker;
+}
+
+/*
+ * Users call this function to see if stack has been corrupted
+ */
+int Threads::testStackMarkers(int *threadid)
+{
+  for (int i=0; i < MAX_THREADS; i++) {
+    if (threadp[i] == NULL) continue;
+    if (threadp[i]->flags == RUNNING) {
+      uint32_t *m = (uint32_t*)threadp[i]->stack;
+      if (*m != thread_marker) {
+        if (threadid) *threadid = i;
+        return -1;
+      }
+    }
+  }
+  return 0;
+}
+
+/*
  * Initializes a thread's stack. Called when thread is created
  */
 void *Threads::loadstack(ThreadFunction p, void * arg, void *stackaddr, int stack_size)
 {
-  interrupt_stack_t * process_frame = (interrupt_stack_t *)((uint8_t*)stackaddr + stack_size - sizeof(interrupt_stack_t) - 8);
+  interrupt_stack_t * process_frame = (interrupt_stack_t *)((uint8_t*)stackaddr + stack_size - sizeof(interrupt_stack_t) - overflow_stack_size);
   process_frame->r0 = (uint32_t)arg;
   process_frame->r1 = 0;
   process_frame->r2 = 0;
@@ -484,6 +517,7 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
       else {
         tp->my_stack = 0;
       }
+      setStackMarker(stack);
       tp->stack = (uint8_t*)stack;
       tp->stack_size = stack_size;
       void *psp = loadstack(p, arg, tp->stack, tp->stack_size);
@@ -579,17 +613,31 @@ void Threads::delay(int millisecond) {
   while((int)millis() - mx < millisecond) yield();
 }
 
-void Threads::idle() {
+/*
+ * Experimental code for putting CPU into sleep mode during delays
+ */
+
+void Threads::setSleepCallback(ThreadFunctionSleep callback) 
+{
+  enter_sleep_callback = callback;
+}
+
+void Threads::idle() 
+{
 	volatile bool needs_run[thread_count];
 	volatile int i, j;
 	volatile int task_id_ends;
+
+  if (enter_sleep_callback==NULL) return;
+
 	__disable_irq();
-	task_id_ends = 0;
+	task_id_ends = -1;
 	//get lowest sleep interval from sleeping tasks into task_id_ends
 	for (i = 0; i < thread_count; i++) {
 		//sort by ending time first
 		for (j = i + 1; j < thread_count; ++j) {
-			if (task_info[i].sleep_time_till_end_tick > task_info[j].sleep_time_till_end_tick) {
+      if (! threadp[i]) continue;
+			if (threadp[i]->sleep_time_till_end_tick > threadp[j]->sleep_time_till_end_tick) {
 				//if end time soonest
 				if (getState(i+1) == SUSPENDED) {
 					task_id_ends = j; //store next task
@@ -597,19 +645,22 @@ void Threads::idle() {
 			}
 		}
 	}
+  if (task_id_ends==-1) return;
+
 	//set the sleeping time to substractor
-	substractor = task_info[task_id_ends].sleep_time_till_end_tick;
+	int subtractor = threadp[task_id_ends]->sleep_time_till_end_tick;
 	
-	if (substractor > 0) {
+	if (subtractor > 0) {
 		//if sleep is needed
-		volatile int time_spent_asleep = enter_sleep(substractor);
+		volatile int time_spent_asleep = enter_sleep_callback(subtractor);
 		//store new data based on time spent asleep
 		for (i = 0; i < thread_count; i++) {
-			needs_run[i] = 0;
-				if (getState(i+1) == SUSPENDED) {
-				task_info[i].sleep_time_till_end_tick -= time_spent_asleep; //substract sleep time
+      if (! threadp[i]) continue;
+      needs_run[i] = 0;
+      if (getState(i+1) == SUSPENDED) {
+				threadp[i]->sleep_time_till_end_tick -= time_spent_asleep; //substract sleep time
 				//time to run?
-				if (task_info[i].sleep_time_till_end_tick <= 0) {
+				if (threadp[i]->sleep_time_till_end_tick <= 0) {
 					needs_run[i] = 1;
 				} else {
 					needs_run[i] = 0;
@@ -618,14 +669,13 @@ void Threads::idle() {
 		}
 		//for each thread when slept, resume if needed
 		for (i = 0; i < thread_count; i++) {
+      if (! threadp[i]) continue;
 			if (needs_run[i]) {
 				setState(i+1, RUNNING);
-				task_info[i].sleep_time_till_end_tick = 60000;
+				threadp[i]->sleep_time_till_end_tick = 60000;
 			}
 		}
 	}
-	//reset substractor
-	substractor = 60000;
 	__enable_irq();
 	yield();
 }
@@ -634,12 +684,14 @@ void Threads::sleep(int ms) {
 	int i = id();
 	if (getState(i) == RUNNING) {
 		__disable_irq();
-		task_info[i-1].sleep_time_till_end_tick = ms;
+		threadp[i-1]->sleep_time_till_end_tick = ms;
 		setState(i, SUSPENDED);
 		__enable_irq();
 		yield();
 	}
 }
+
+/* End of experimental code */
 
 int Threads::id() {
   volatile int ret;
