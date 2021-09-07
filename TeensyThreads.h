@@ -186,6 +186,9 @@ public:
   static const int MAX_THREADS = 16;
   static const int DEFAULT_STACK0_SIZE = 10240; // estimate for thread 0?
   static const int DEFAULT_TICK_MICROSECONDS = 100;
+  static const int UTIL_STATE_NAME_DESCRIPTION_LENGTH = 24;
+  static const int UTIL_TRHEADS_BUFFER_LENGTH = 1024;
+
 
   // State of threading system
   static const int STARTED = 1;
@@ -277,16 +280,19 @@ public:
   int id();
   int getStackUsed(int id);
   int getStackRemaining(int id);
+  char* threadsInfo(void);
 #ifdef DEBUG
   unsigned long getCyclesUsed(int id);
 #endif
 
   // Yield current thread's remaining time slice to the next thread, causing immediate
   // context switch
-  void yield();
+  static void yield();
   // Wait for milliseconds using yield(), giving other slices your wait time
   void delay(int millisecond);
-
+  // Wait for microseconds using yield(), giving other slices your wait time
+  void delay_us(int microsecond);
+  
   // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
   // can pass the previous state to restore
   int start(int old_state = -1);
