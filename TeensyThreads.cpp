@@ -26,6 +26,8 @@
 #include <Arduino.h>
 #include <string.h>
 
+#include "utils/debug.h"
+
 #ifndef __IMXRT1062__
 
 #include <IntervalTimer.h>
