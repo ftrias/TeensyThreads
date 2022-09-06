@@ -32,4 +32,5 @@ void loop() {
   count++;
   blinkcode = count;
   delay(5000);
+  Serial.println(count);
 }

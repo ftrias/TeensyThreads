@@ -24,9 +24,14 @@
  */
 #include "TeensyThreads.h"
 #include <Arduino.h>
+#include <string.h>
+
+#ifndef __IMXRT1062__
 
 #include <IntervalTimer.h>
 IntervalTimer context_timer;
+
+#endif
 
 Threads threads;
 
@@ -39,17 +44,19 @@ unsigned int time_end;
 // They are copies or pointers to data in Threads and ThreadInfo
 // and put here seperately in order to simplify the code.
 extern "C" {
-  int currentUseSystick;
-  int currentActive;
+  int currentUseSystick;      // using Systick vs PIT/GPT
+  int currentActive;          // state of the system (first, start, stop)
   int currentCount;
-  ThreadInfo *currentThread;
+  ThreadInfo *currentThread;  // the thread currently running
   void *currentSave;
-  int currentMSP;
+  int currentMSP;             // Stack pointers to save
   void *currentSP;
   void loadNextThread() {
     threads.getNextThread();
   }
 }
+
+const int overflow_stack_size = 8;
 
 extern "C" void stack_overflow_default_isr() { 
   currentThread->flags = Threads::ENDED;
@@ -65,6 +72,7 @@ IsrFunction Threads::save_systick_isr;
 IsrFunction Threads::save_svcall_isr;
 
 /*
+ * Teensy 3:
  * Replace the SysTick interrupt for our context switching. Note that
  * this function is "naked" meaning it does not save it's registers
  * on the stack. This is so we can preserve the stack of the caller.
@@ -117,9 +125,126 @@ void __attribute((naked, noinline)) threads_svcall_isr(void)
   __asm volatile("bx lr");
 }
 
+#ifdef __IMXRT1062__
+
+/*
+ * 
+ * Teensy 4:
+ * Use unused GPT timers for context switching
+ */
+
+extern "C" void unused_interrupt_vector(void);
+
+static void __attribute((naked, noinline)) gpt1_isr() {
+  GPT1_SR |= GPT_SR_OF1;  // clear set bit
+  __asm volatile ("dsb"); // see github bug #20 by manitou48
+  __asm volatile("b context_switch");
+}
+
+static void __attribute((naked, noinline)) gpt2_isr() {
+  GPT2_SR |= GPT_SR_OF1;  // clear set bit
+  __asm volatile ("dsb"); // see github bug #20 by manitou48
+  __asm volatile("b context_switch");
+}
+
+bool gtp1_init(unsigned int microseconds)
+{
+  // Initialization code derived from @manitou48.
+  // See https://github.com/manitou48/teensy4/blob/master/gpt_isr.ino
+  // See https://forum.pjrc.com/threads/54265-Teensy-4-testing-mbed-NXP-MXRT1050-EVKB-(600-Mhz-M7)?p=193217&viewfull=1#post193217
+
+  // keep track of which GPT timer we are using
+  static int gpt_number = 0;
+
+  // not configured yet, so find an inactive GPT timer
+  if (gpt_number == 0) {
+    if (! NVIC_IS_ENABLED(IRQ_GPT1)) {
+      attachInterruptVector(IRQ_GPT1, &gpt1_isr);
+      NVIC_SET_PRIORITY(IRQ_GPT1, 255);
+      NVIC_ENABLE_IRQ(IRQ_GPT1);
+      gpt_number = 1;
+    }
+    else if (! NVIC_IS_ENABLED(IRQ_GPT2)) {
+      attachInterruptVector(IRQ_GPT2, &gpt2_isr);
+      NVIC_SET_PRIORITY(IRQ_GPT2, 255);
+      NVIC_ENABLE_IRQ(IRQ_GPT2);
+      gpt_number = 2;
+    }
+    else {
+      // if neither timer is free, we fail
+      return false;
+    }
+  }
+
+  switch (gpt_number) {
+    case 1:
+      CCM_CCGR1 |= CCM_CCGR1_GPT1_BUS(CCM_CCGR_ON) ;  // enable GPT1 module
+      GPT1_CR = 0;                   // disable timer
+      GPT1_PR = 23;                  // prescale: divide by 24 so 1 tick = 1 microsecond at 24MHz
+      GPT1_OCR1 = microseconds - 1;  // compare value
+      GPT1_SR = 0x3F;                // clear all prior status
+      GPT1_IR = GPT_IR_OF1IE;        // use first timer
+      GPT1_CR = GPT_CR_EN | GPT_CR_CLKSRC(1) ; // set to peripheral clock (24MHz)
+      break;
+    case 2:
+      CCM_CCGR1 |= CCM_CCGR1_GPT1_BUS(CCM_CCGR_ON) ;  // enable GPT1 module
+      GPT2_CR = 0;                   // disable timer
+      GPT2_PR = 23;                  // prescale: divide by 24 so 1 tick = 1 microsecond at 24MHz
+      GPT2_OCR1 = microseconds - 1;  // compare value
+      GPT2_SR = 0x3F;                // clear all prior status
+      GPT2_IR = GPT_IR_OF1IE;        // use first timer
+      GPT2_CR = GPT_CR_EN | GPT_CR_CLKSRC(1) ; // set to peripheral clock (24MHz)
+      break;
+    default:
+      return false;
+  }
+
+  return true;
+}
+
+#endif
+
+/*************************************************/
+/**\name UTILITIES FUNCTIONS                     */
+/*************************************************/
+/**
+ * \brief Convert thead state to printable string
+ */
+char * _util_state_2_string(int state){
+    static char _state[Threads::UTIL_STATE_NAME_DESCRIPTION_LENGTH];
+    memset(_state, 0, sizeof(_state));
+
+    switch (state)
+    {
+    case 0:
+        sprintf(_state, "EMPTY");
+        break;
+    case 1:
+        sprintf(_state, "RUNNING");
+        break;
+    case 2:
+        sprintf(_state, "ENDED");
+        break;
+    case 3:
+        sprintf(_state, "ENDING");
+        break;
+    case 4:
+        sprintf(_state, "SUSPENDED");
+        break;
+    default:
+        sprintf(_state, "%d", state);
+        break;
+    }
+    
+    return _state;
+}
+
+/*************************************************/
+/**\name CLASS THREAD                            */
+/*************************************************/
 Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   // initilize thread slots to empty
-  for(int i=0; i<MAX_THREADS; i++) {
+  for(int i=1; i<MAX_THREADS; i++) {
     threadp[i] = NULL;
   }
   // fill thread 0, which is always running
@@ -136,14 +261,39 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   threadp[0]->ticks = DEFAULT_TICKS;
   threadp[0]->stack = (uint8_t*)&_estack - DEFAULT_STACK0_SIZE;
   threadp[0]->stack_size = DEFAULT_STACK0_SIZE;
+  setStackMarker(threadp[0]->stack);
+
+#ifdef __IMXRT1062__
+
+  // commandeer SVCall & use GTP1 Interrupt
+  save_svcall_isr = _VectorsRam[11];
+  if (save_svcall_isr == unused_interrupt_vector) save_svcall_isr = 0;
+  _VectorsRam[11] = threads_svcall_isr;
+
+  currentUseSystick = 0; // disable Systick calls
+  gtp1_init(1000);       // tick every millisecond
+
+#else
+
   currentUseSystick = 1;
 
   // commandeer the SVCall & SysTick Exceptions
   save_svcall_isr = _VectorsRam[11];
   if (save_svcall_isr == unused_isr) save_svcall_isr = 0;
   _VectorsRam[11] = threads_svcall_isr;
+  
   save_systick_isr = _VectorsRam[15];
+  if (save_systick_isr == unused_isr) save_systick_isr = 0;
   _VectorsRam[15] = threads_systick_isr;
+
+#ifdef DEBUG
+#if defined(__MK20DX256__) || defined(__MK20DX128__)
+  ARM_DEMCR |= ARM_DEMCR_TRCENA; // Make ssure Cycle Counter active
+  ARM_DWT_CTRL |= ARM_DWT_CTRL_CYCCNTENA;
+#endif
+#endif
+
+#endif
 }
 
 /*
@@ -178,49 +328,41 @@ int Threads::stop() {
  * This will also set the context_switcher() state variables
  */
 void Threads::getNextThread() {
+
+#ifdef DEBUG
+  // Keep track of the number of cycles expended by each thread.
+  // See @dfragster: https://forum.pjrc.com/threads/41504-Teensy-3-x-multithreading-library-first-release?p=213086#post213086
+  currentThread->cyclesAccum += ARM_DWT_CYCCNT - currentThread->cyclesStart;
+#endif
+
   // First, save the currentSP set by context_switch
-  threadp[current_thread]->sp = currentSP;
+  currentThread->sp = currentSP;
 
   // did we overflow the stack (don't check thread 0)?
   // allow an extra 8 bytes for a call to the ISR and one additional call or variable
-  if (current_thread && ((uint8_t*)currentThread->sp - currentThread->stack <= 8)) {
+  if (current_thread && ((uint8_t*)currentThread->sp - currentThread->stack <= overflow_stack_size)) {
     stack_overflow_isr();
   }
 
-  // Find any priority threads
-  int priority_thread = -1;
-  for(int i=0; i < MAX_THREADS; i++) {
-    if (threadp[i]) { // initialized thread?
-      if (threadp[current_thread]->flags == RUNNING) { // is it running?
-        if (threadp[i]->priority) {
-          current_thread = i;
-          priority_thread = i;
-          currentCount = threadp[i]->ticks; // .priority
-          threadp[i]->priority = 0;
-          break;
-        }
-      }
+  // Find the next running thread
+  while(1) {
+    current_thread++;
+    if (current_thread >= MAX_THREADS) {
+      current_thread = 0; // thread 0 is MSP; always active so return
+      break;
     }
+    if (threadp[current_thread] && threadp[current_thread]->flags == RUNNING) break;
   }
-
-  // If no priority threads, find next active one
-  if (priority_thread == -1) {
-    // Find the next running thread
-    while(1) {
-      current_thread++;
-      if (current_thread >= MAX_THREADS) {
-        current_thread = 0; // thread 0 is MSP; always active so return
-        break;
-      }
-      if (threadp[current_thread] && threadp[current_thread]->flags == RUNNING) break;
-    }
-    currentCount = threadp[current_thread]->ticks;
-  }
+  currentCount = threadp[current_thread]->ticks;
 
   currentThread = threadp[current_thread];
   currentSave = &threadp[current_thread]->save;
   currentMSP = (current_thread==0?1:0);
   currentSP = threadp[current_thread]->sp;
+
+#ifdef DEBUG
+  currentThread->cyclesStart = ARM_DWT_CYCCNT;
+#endif
 }
 
 /*
@@ -242,12 +384,20 @@ extern "C" void context_switch_pit_isr();
  * Stop using the SysTick interrupt and start using
  * the IntervalTimer timer. The parameter is the number of microseconds
  * for each tick.
- *
- * Implementation strategy suggested by @tni in Teensy Forums; see
- * https://forum.pjrc.com/threads/41504-Teensy-3-x-multithreading-library-first-release
  */
 int Threads::setMicroTimer(int tick_microseconds)
 {
+#ifdef __IMXRT1062__
+
+  gtp1_init(tick_microseconds);
+
+#else
+
+/*
+ * Implementation strategy suggested by @tni in Teensy Forums; see
+ * https://forum.pjrc.com/threads/41504-Teensy-3-x-multithreading-library-first-release
+ */
+
   // lowest priority so we don't interrupt other interrupts
   context_timer.priority(255);
   // start timer with dummy fuction
@@ -256,14 +406,18 @@ int Threads::setMicroTimer(int tick_microseconds)
     return 0;
   }
   currentUseSystick = 0; // disable Systick calls
+
   // get the PIT number [0-3] (IntervalTimer overrides IRQ_NUMBER_t op)
   int number = (IRQ_NUMBER_t)context_timer - IRQ_PIT_CH0;
   // calculate number of uint32_t per PIT; should be 4.
   // Not hard-coded in case this changes in future CPUs.
-  const int width = (PIT_TFLG1 - PIT_TFLG0) / 4;
+  const int width = (PIT_TFLG1 - PIT_TFLG0) / sizeof(uint32_t);
   // get the right flag to ackowledge PIT interrupt
   context_timer_flag = &PIT_TFLG0 + (width * number);
   attachInterruptVector(context_timer, context_switch_pit_isr);
+
+#endif
+
   return 1;
 }
 
@@ -317,11 +471,41 @@ void Threads::del_process(void)
 }
 
 /*
+ * Set a marker at memory so we can detect memory overruns
+ */
+
+const uint32_t thread_marker = 0xDEADDEAD;
+
+void Threads::setStackMarker(void *stack)
+{
+  uint32_t *m = (uint32_t*)stack;
+  *m = thread_marker;
+}
+
+/*
+ * Users call this function to see if stack has been corrupted
+ */
+int Threads::testStackMarkers(int *threadid)
+{
+  for (int i=0; i < MAX_THREADS; i++) {
+    if (threadp[i] == NULL) continue;
+    if (threadp[i]->flags == RUNNING) {
+      uint32_t *m = (uint32_t*)threadp[i]->stack;
+      if (*m != thread_marker) {
+        if (threadid) *threadid = i;
+        return -1;
+      }
+    }
+  }
+  return 0;
+}
+
+/*
  * Initializes a thread's stack. Called when thread is created
  */
 void *Threads::loadstack(ThreadFunction p, void * arg, void *stackaddr, int stack_size)
 {
-  interrupt_stack_t * process_frame = (interrupt_stack_t *)((uint8_t*)stackaddr + stack_size - sizeof(interrupt_stack_t) - 8);
+  interrupt_stack_t * process_frame = (interrupt_stack_t *)((uint8_t*)stackaddr + stack_size - sizeof(interrupt_stack_t) - overflow_stack_size);
   process_frame->r0 = (uint32_t)arg;
   process_frame->r1 = 0;
   process_frame->r2 = 0;
@@ -372,6 +556,7 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
       else {
         tp->my_stack = 0;
       }
+      setStackMarker(stack);
       tp->stack = (uint8_t*)stack;
       tp->stack_size = stack_size;
       void *psp = loadstack(p, arg, tp->stack, tp->stack_size);
@@ -379,7 +564,12 @@ int Threads::addThread(ThreadFunction p, void * arg, int stack_size, void *stack
       tp->ticks = DEFAULT_TICKS;
       tp->flags = RUNNING;
       tp->save.lr = 0xFFFFFFF9;
-      tp->priority = 0;
+
+#ifdef DEBUG
+      tp->cyclesStart = ARM_DWT_CYCCNT;
+      tp->cyclesAccum = 0;
+#endif
+
       currentActive = old_state;
       thread_count++;
       if (old_state == STARTED || old_state == FIRST_RUN) start();
@@ -444,12 +634,6 @@ void Threads::setDefaultTimeSlice(unsigned int ticks)
   DEFAULT_TICKS = ticks - 1;
 }
 
-void Threads::setPriority(int id, int level)
-{
-  if (id == -1) id = current_thread;
-  threadp[id]->priority = level;
-}
-
 void Threads::setDefaultStackSize(unsigned int bytes_size)
 {
   DEFAULT_STACK_SIZE = bytes_size;
@@ -468,6 +652,90 @@ void Threads::delay(int millisecond) {
   while((int)millis() - mx < millisecond) yield();
 }
 
+/*
+ * Experimental code for putting CPU into sleep mode during delays
+ */
+
+void Threads::setSleepCallback(ThreadFunctionSleep callback) 
+{
+  enter_sleep_callback = callback;
+}
+
+void Threads::delay_us(int microsecond){
+  int mx = micros();
+  while ((int)micros() - mx < microsecond) yield();
+}
+
+void Threads::idle() {
+	volatile bool needs_run[thread_count];
+	volatile int i, j;
+	volatile int task_id_ends;
+
+  if (enter_sleep_callback==NULL) return;
+
+	__disable_irq();
+	task_id_ends = -1;
+	//get lowest sleep interval from sleeping tasks into task_id_ends
+	for (i = 0; i < thread_count; i++) {
+		//sort by ending time first
+		for (j = i + 1; j < thread_count; ++j) {
+      if (! threadp[i]) continue;
+			if (threadp[i]->sleep_time_till_end_tick > threadp[j]->sleep_time_till_end_tick) {
+				//if end time soonest
+				if (getState(i+1) == SUSPENDED) {
+					task_id_ends = j; //store next task
+				}
+			}
+		}
+	}
+  if (task_id_ends==-1) return;
+
+	//set the sleeping time to substractor
+	int subtractor = threadp[task_id_ends]->sleep_time_till_end_tick;
+	
+	if (subtractor > 0) {
+		//if sleep is needed
+		volatile int time_spent_asleep = enter_sleep_callback(subtractor);
+		//store new data based on time spent asleep
+		for (i = 0; i < thread_count; i++) {
+      if (! threadp[i]) continue;
+      needs_run[i] = 0;
+      if (getState(i+1) == SUSPENDED) {
+				threadp[i]->sleep_time_till_end_tick -= time_spent_asleep; //substract sleep time
+				//time to run?
+				if (threadp[i]->sleep_time_till_end_tick <= 0) {
+					needs_run[i] = 1;
+				} else {
+					needs_run[i] = 0;
+				}
+			}
+		}
+		//for each thread when slept, resume if needed
+		for (i = 0; i < thread_count; i++) {
+      if (! threadp[i]) continue;
+			if (needs_run[i]) {
+				setState(i+1, RUNNING);
+				threadp[i]->sleep_time_till_end_tick = 60000;
+			}
+		}
+	}
+	__enable_irq();
+	yield();
+}
+
+void Threads::sleep(int ms) {
+	int i = id();
+	if (getState(i) == RUNNING) {
+		__disable_irq();
+		threadp[i-1]->sleep_time_till_end_tick = ms;
+		setState(i, SUSPENDED);
+		__enable_irq();
+		yield();
+	}
+}
+
+/* End of experimental code */
+
 int Threads::id() {
   volatile int ret;
   __disable_irq();
@@ -479,9 +747,48 @@ int Threads::id() {
 int Threads::getStackUsed(int id) {
   return threadp[id]->stack + threadp[id]->stack_size - (uint8_t*)threadp[id]->sp;
 }
+
 int Threads::getStackRemaining(int id) {
   return (uint8_t*)threadp[id]->sp - threadp[id]->stack;
 }
+
+char *Threads::threadsInfo(void)
+{
+  static char _buffer[Threads::UTIL_TRHEADS_BUFFER_LENGTH];
+  uint _buffer_cursor = 0;
+  _buffer_cursor = sprintf(_buffer, "_____\n");
+  for (int each_thread = 0; each_thread < thread_count; each_thread++)
+  {
+    if (threadp[each_thread] != NULL)
+    {
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "%d:", each_thread);
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "Stack size:%d|",
+                                threadp[each_thread]->stack_size);
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "Used:%d|Remains:%d|",
+                                getStackUsed(each_thread),
+                                getStackRemaining(each_thread));
+      char *_thread_state = _util_state_2_string(threadp[each_thread]->flags);
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "State:%s|",
+                                _thread_state);
+#ifdef DEBUG
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "cycles:%lu\n",
+                                threadp[each_thread]->cyclesAccum);
+#else
+      _buffer_cursor += sprintf(_buffer + _buffer_cursor, "\n");
+#endif
+    }
+  }
+  return _buffer;
+}
+
+#ifdef DEBUG
+unsigned long Threads::getCyclesUsed(int id) {
+  stop();
+  unsigned long ret = threadp[id]->cyclesAccum;
+  start();
+  return ret;
+}
+#endif
 
 /*
  * On creation, stop threading and save state
@@ -545,7 +852,6 @@ int __attribute__ ((noinline)) Threads::Mutex::unlock() {
   if (state==1) {
     state = 0;
     if (waitthread >= 0) { // reanimate a suspended thread waiting for unlock
-      threads.setPriority(waitthread, waitcount);
       threads.restart(waitthread);
       waitthread = -1;
       __flush_cpu();

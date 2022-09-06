@@ -70,6 +70,12 @@
 #define _THREADS_H
 
 #include <stdint.h>
+#include <stddef.h>
+
+/* Enabling debugging information allows access to:
+ *   getCyclesUsed()
+ */
+// #define DEBUG
 
 extern "C" {
   void context_switch(void);
@@ -149,9 +155,13 @@ class ThreadInfo {
     int my_stack = 0;
     software_stack_t save;
     volatile int flags = 0;
-    int priority = 0;
     void *sp;
     int ticks;
+    volatile int sleep_time_till_end_tick; // Per-task sleep time
+#ifdef DEBUG
+    unsigned long cyclesStart;  // On T_4 the CycCnt is always active - on T_3.x it currently is not - unless Audio starts it AFAIK
+    unsigned long cyclesAccum;
+#endif
 };
 
 extern "C" void unused_isr(void);
@@ -159,6 +169,7 @@ extern "C" void unused_isr(void);
 typedef void (*ThreadFunction)(void*);
 typedef void (*ThreadFunctionInt)(int);
 typedef void (*ThreadFunctionNone)();
+typedef int (*ThreadFunctionSleep)(int);
 
 typedef void (*IsrFunction)();
 
@@ -170,11 +181,14 @@ class Threads {
 public:
   // The maximum number of threads is hard-coded to simplify
   // the implementation. See notes of ThreadInfo.
-  static const int MAX_THREADS = 8;
-  int DEFAULT_STACK_SIZE = 1024;
-  const int DEFAULT_STACK0_SIZE = 10240; // estimate for thread 0?
   int DEFAULT_TICKS = 10;
+  int DEFAULT_STACK_SIZE = 1024;
+  static const int MAX_THREADS = 16;
+  static const int DEFAULT_STACK0_SIZE = 10240; // estimate for thread 0?
   static const int DEFAULT_TICK_MICROSECONDS = 100;
+  static const int UTIL_STATE_NAME_DESCRIPTION_LENGTH = 24;
+  static const int UTIL_TRHEADS_BUFFER_LENGTH = 1024;
+
 
   // State of threading system
   static const int STARTED = 1;
@@ -208,6 +222,8 @@ protected:
   // This used to be allocated statically, as below. Kept for reference in case of bugs.
   // ThreadInfo thread[MAX_THREADS];
 
+  ThreadFunctionSleep enter_sleep_callback = NULL;
+
 public: // public for debugging
   static IsrFunction save_systick_isr;
   static IsrFunction save_svcall_isr;
@@ -234,6 +250,10 @@ public:
   // Wait until thread returns up to timeout_ms milliseconds. If ms is 0, wait
   // indefinitely.
   int wait(int id, unsigned int timeout_ms = 0);
+  // If using sleep, please run this in infinite loop
+  void idle();
+  // Suspend execution of current thread for ms milliseconds
+  void sleep(int ms);
   // Permanently stop a running thread. Thread will end on the next thread slice tick.
   int kill(int id);
   // Suspend a thread (on the next slice tick). Can be restarted with restart().
@@ -253,27 +273,34 @@ public:
   int setSliceMillis(int milliseconds);
   // Set each time slice to be 'microseconds' long
   int setSliceMicros(int microseconds);
+  // Set sleep callback function
+  void setSleepCallback(ThreadFunctionSleep callback);
 
   // Get the id of the currently running thread
   int id();
   int getStackUsed(int id);
   int getStackRemaining(int id);
-
-  // Give a thread running priority so that it will run on the next context switch for
-  // 'ticks' number of slices; used internally by locking mechanism
-  void setPriority(int id, int ticks);
+  char* threadsInfo(void);
+#ifdef DEBUG
+  unsigned long getCyclesUsed(int id);
+#endif
 
   // Yield current thread's remaining time slice to the next thread, causing immediate
   // context switch
-  void yield();
+  static void yield();
   // Wait for milliseconds using yield(), giving other slices your wait time
   void delay(int millisecond);
-
+  // Wait for microseconds using yield(), giving other slices your wait time
+  void delay_us(int microsecond);
+  
   // Start/restart threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
   // can pass the previous state to restore
   int start(int old_state = -1);
   // Stop threading system; returns previous state: STARTED, STOPPED, FIRST_RUN
   int stop();
+
+  // Test all stack markers; if ok return 0; problems, return -1 and set *threadid to id
+  int testStackMarkers(int *threadid = NULL);
 
   // Allow these static functions and classes to access our members
   friend void context_switch(void);
@@ -288,6 +315,7 @@ protected:
   void getNextThread();
   void *loadstack(ThreadFunction p, void * arg, void *stackaddr, int stack_size);
   static void force_switch_isr();
+  void setStackMarker(void *stack);
 
 private:
   static void del_process(void);

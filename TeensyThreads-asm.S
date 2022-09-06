@@ -119,8 +119,8 @@ context_switch_check:
 
 call_direct:
 
-  // Just do the context-switch even if it's not time
-  LDR r0, =currentActive
+  // Just do the context-switch (even if it's not time)
+  LDR r0, =currentActive   // If the thread isn't active, skip it
   LDR r0, [r0]
   CMP r0, #1
   BNE to_exit
