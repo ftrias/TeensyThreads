@@ -371,8 +371,9 @@ void Threads::getNextThread() {
 /*
  * Empty placeholder for IntervalTimer class
  */
+#ifndef __IMXRT1062__
 static void context_pit_empty() {}
-
+#endif
 /*
  * Store the PIT timer flag register for use in assembly
  */
