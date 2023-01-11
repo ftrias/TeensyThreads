@@ -259,7 +259,10 @@ Threads::Threads() : current_thread(0), thread_count(0), thread_error(0) {
   currentActive = FIRST_RUN;
   threadp[0]->flags = RUNNING;
   threadp[0]->ticks = DEFAULT_TICKS;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
   threadp[0]->stack = (uint8_t*)&_estack - DEFAULT_STACK0_SIZE;
+#pragma GCC diagnostic pop
   threadp[0]->stack_size = DEFAULT_STACK0_SIZE;
   setStackMarker(threadp[0]->stack);
 
@@ -368,8 +371,9 @@ void Threads::getNextThread() {
 /*
  * Empty placeholder for IntervalTimer class
  */
+#ifndef __IMXRT1062__
 static void context_pit_empty() {}
-
+#endif
 /*
  * Store the PIT timer flag register for use in assembly
  */
@@ -478,8 +482,11 @@ const uint32_t thread_marker = 0xDEADDEAD;
 
 void Threads::setStackMarker(void *stack)
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
   uint32_t *m = (uint32_t*)stack;
   *m = thread_marker;
+#pragma GCC diagnostic pop
 }
 
 /*
@@ -679,7 +686,7 @@ void Threads::idle() {
 	for (i = 0; i < thread_count; i++) {
 		//sort by ending time first
 		for (j = i + 1; j < thread_count; ++j) {
-      if (! threadp[i]) continue;
+			if (! threadp[i]) { continue; }
 			if (threadp[i]->sleep_time_till_end_tick > threadp[j]->sleep_time_till_end_tick) {
 				//if end time soonest
 				if (getState(i+1) == SUSPENDED) {
@@ -712,7 +719,7 @@ void Threads::idle() {
 		}
 		//for each thread when slept, resume if needed
 		for (i = 0; i < thread_count; i++) {
-      if (! threadp[i]) continue;
+			if (! threadp[i]) { continue; }
 			if (needs_run[i]) {
 				setState(i+1, RUNNING);
 				threadp[i]->sleep_time_till_end_tick = 60000;
@@ -755,7 +762,7 @@ int Threads::getStackRemaining(int id) {
 char *Threads::threadsInfo(void)
 {
   static char _buffer[Threads::UTIL_TRHEADS_BUFFER_LENGTH];
-  uint _buffer_cursor = 0;
+  unsigned int _buffer_cursor = 0;
   _buffer_cursor = sprintf(_buffer, "_____\n");
   for (int each_thread = 0; each_thread < thread_count; each_thread++)
   {

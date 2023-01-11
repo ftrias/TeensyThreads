@@ -120,7 +120,7 @@ void stack_overflow_isr(void) {
 // it is smart enough to know it doesn't do anything
 void __attribute__((optimize("O0"))) recursive_thread(int level) {
   if (stack_fault) return;
-  char x[128]; // use up some stack space
+  [[maybe_unused]] char x[128]; // use up some stack space
   delay(20);
   recursive_thread(level+1);
 }
